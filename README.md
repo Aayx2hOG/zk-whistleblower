@@ -27,7 +27,7 @@ test/fixtures/setup.ts           — Poseidon, Merkle tree, proof generation uti
 test/WhistleblowerRegistry.ts    — 13 tests with real ZK proofs
 scripts/compile-circuit.ts       — Circuit compilation + trusted setup pipeline
 scripts/deploy.ts                — Deploy + end-to-end demo
-frontend/                        — Next.js 15 UI (Person B)
+frontend/                        — Next.js 15 UI 
   src/app/admin/                 —   Admin: register / revoke Merkle roots
   src/app/submit/                —   Submit: generate ZK proof + send report
   src/app/reviewer/              —   Reviewer: list all ReportSubmitted events
@@ -50,7 +50,7 @@ pnpm run deploy:local       # deploy + demo on local Hardhat network
 pnpm run deploy:sepolia     # deploy to Sepolia testnet
 ```
 
-## Frontend (Person B)
+## Frontend 
 
 ### First-time setup
 
