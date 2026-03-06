@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "compile:circuit": "npx tsx scripts/compile-circuit.ts",
+    "compile:circuit": "tsx scripts/compile-circuit.ts",
     "test": "npx hardhat test mocha",
     "deploy:local": "npx hardhat run scripts/deploy.ts",
     "deploy:sepolia": "npx hardhat run --network sepolia scripts/deploy.ts"
@@ -32,6 +32,7 @@
     "hardhat-gas-reporter": "^2.3.0",
     "mocha": "^11.7.5",
     "snarkjs": "^0.7.6",
+    "tsx": "^4.20.5",
     "typescript": "~5.8.3"
   },
   "dependencies": {

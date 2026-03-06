@@ -27,6 +27,12 @@ test/fixtures/setup.ts           — Poseidon, Merkle tree, proof generation uti
 test/WhistleblowerRegistry.ts    — 13 tests with real ZK proofs
 scripts/compile-circuit.ts       — Circuit compilation + trusted setup pipeline
 scripts/deploy.ts                — Deploy + end-to-end demo
+frontend/                        — Next.js 15 UI (Person B)
+  src/app/admin/                 —   Admin: register / revoke Merkle roots
+  src/app/submit/                —   Submit: generate ZK proof + send report
+  src/app/reviewer/              —   Reviewer: list all ReportSubmitted events
+  src/lib/                       —   contracts ABI, Poseidon, Merkle tree, zkProof helpers
+  src/providers/                 —   wagmi v2 + RainbowKit wallet provider
 ```
 
 ## Setup
@@ -43,6 +49,46 @@ pnpm run test               # run all 13 tests
 pnpm run deploy:local       # deploy + demo on local Hardhat network
 pnpm run deploy:sepolia     # deploy to Sepolia testnet
 ```
+
+## Frontend (Person B)
+
+### First-time setup
+
+```bash
+# 1. Copy circuit artifacts into the Next.js public dir
+cd frontend
+pnpm install
+pnpm run copy-artifacts         # copies wasm + zkey from ../circuits-artifacts/
+
+# 2. Set contract addresses
+cp .env.local.example .env.local
+#    → paste addresses printed by `pnpm run deploy:local` into .env.local
+
+# 3. Start dev server
+pnpm run dev                    # http://localhost:3000
+```
+
+### Exit criteria (local Hardhat)
+
+1. Start Hardhat node: `npx hardhat node` (in root dir)
+2. Deploy contracts: `npx hardhat run scripts/deploy.ts`
+3. Copy the printed addresses into `frontend/.env.local`
+4. Run `pnpm run dev` in `frontend/`
+5. Connect MetaMask to `localhost:8545` (Chain ID 31337)
+6. **Admin page**: enter member secrets → Build Tree → Add Root
+7. **Submit page**: enter your secret + same secrets list + external nullifier → Generate Proof (~30 s) → Submit Report
+8. **Reviewer page**: see the submitted report listed with its category and CID
+
+### Tech stack (frontend)
+
+| Library | Purpose |
+|---|---|
+| Next.js 15 (App Router) | Framework |
+| wagmi v2 + viem | Contract reads/writes |
+| RainbowKit | Wallet connect modal |
+| snarkjs (browser) | Client-side Groth16 proof generation |
+| circomlibjs | Poseidon hashing in browser |
+| Tailwind CSS | Styling |
 
 ## Circuit Details
 
