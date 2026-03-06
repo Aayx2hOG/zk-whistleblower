@@ -20,12 +20,12 @@ body {
   background-size: 80px 80px;
 }
 
-/* Brutalist card style */
+
 .card {
   @apply border border-white/10 bg-white/[0.02] p-8;
 }
 
-/* Brutalist input style */
+
 .input {
   @apply w-full border border-white/20 bg-transparent p-4 font-mono text-white text-sm
     placeholder-slate-500 focus:border-white focus:outline-none focus:ring-0;
@@ -36,7 +36,7 @@ body {
   @apply mb-2 block text-[10px] font-bold text-slate-400 uppercase tracking-widest;
 }
 
-/* Primary button - brutalist */
+/* Primary button */
 .btn-primary {
   @apply w-full py-4 border border-white text-white hover:bg-white hover:text-black
     transition-all font-black uppercase tracking-widest text-sm

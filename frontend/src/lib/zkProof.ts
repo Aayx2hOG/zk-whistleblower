@@ -34,7 +34,6 @@ async function fetchBytes(url: string): Promise<Uint8Array> {
 /**
  * Generates a Groth16 membership proof.
  * Fetches wasm + zkey from public/circuits/ at runtime.
- * Takes ~20–40 s on first run (zkey is ~15 MB).
  */
 export async function generateZKProof(input: ProofInput): Promise<FormattedProof> {
   const { initPoseidon } = await import("./poseidon");
@@ -81,5 +80,5 @@ export async function generateZKProof(input: ProofInput): Promise<FormattedProof
   return formatted;
 }
 
-/** Circuit depth — exported so UI components can display it */
+
 export { TREE_DEPTH };

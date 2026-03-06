@@ -4,10 +4,7 @@
  * Dynamic import ensures snarkjs/circomlibjs are never touched during SSR.
  */
 
-// circomlibjs types are loose by design — it accepts field elements, not raw bigints
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let poseidon: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let F: { e: (x: bigint) => unknown; toObject: (x: unknown) => bigint } | null =
   null;
 

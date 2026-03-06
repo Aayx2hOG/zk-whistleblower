@@ -8,7 +8,7 @@ import {
 } from "wagmi";
 import { REGISTRY_ABI, REGISTRY_ADDRESS, CATEGORIES } from "@/lib/contracts";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// types
 interface Report {
   id: bigint;
   nullifierHash: bigint;
@@ -18,7 +18,7 @@ interface Report {
   merkleRoot: bigint;
 }
 
-// ─── Category badge ───────────────────────────────────────────────────────────
+//badge
 const CATEGORY_COLORS = [
   "bg-red-500/20 text-red-300 border border-red-500/30",
   "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30",
@@ -36,7 +36,7 @@ function CategoryBadge({ category }: { category: number }) {
   );
 }
 
-// ─── Single report card ───────────────────────────────────────────────────────
+//report card
 function ReportCard({ report }: { report: Report }) {
   const date = new Date(Number(report.timestamp) * 1000).toLocaleString();
   return (
@@ -69,21 +69,21 @@ function ReportCard({ report }: { report: Report }) {
   );
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
+//review page
 export default function ReviewerPage() {
   const publicClient = usePublicClient();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Read total report count
+
   const { data: reportCount } = useReadContract({
     address: REGISTRY_ADDRESS,
     abi: REGISTRY_ABI,
     functionName: "getReportCount",
   });
 
-  // Fetch all reports once count is known
+
   useEffect(() => {
     if (reportCount === undefined) return;
 
@@ -134,14 +134,13 @@ export default function ReviewerPage() {
     })();
   }, [reportCount, publicClient]);
 
-  // Watch for new reports in real-time
+//real time report fetch
   useWatchContractEvent({
     address: REGISTRY_ADDRESS,
     abi: REGISTRY_ABI,
     eventName: "ReportSubmitted",
     onLogs(logs) {
-      // Re-fetch by updating count signal — simplest approach:
-      // Just append a skeletal entry from the event (full data comes from next count read)
+
       logs.forEach((log) => {
         if (!("args" in log) || !log.args) return;
         const args = log.args as {
@@ -151,13 +150,14 @@ export default function ReviewerPage() {
           category: number;
           timestamp: bigint;
         };
+        // will be updated on next full fetch
         const newReport: Report = {
           id: args.reportId,
           nullifierHash: args.nullifierHash,
           encryptedCID: args.encryptedCID,
           timestamp: args.timestamp,
           category: Number(args.category),
-          merkleRoot: 0n, // will be updated on next full fetch
+          merkleRoot: 0n, 
         };
         setReports((prev) => {
           if (prev.some((r) => r.id === newReport.id)) return prev;

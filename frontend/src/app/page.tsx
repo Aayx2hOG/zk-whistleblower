@@ -48,7 +48,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* How it works */}
+      {/* landing page info card*/}
       <section className="card space-y-4">
         <div className="flex justify-between items-start mb-2">
           <div>
@@ -77,7 +77,7 @@ export default function HomePage() {
         </ol>
       </section>
 
-      {/* Cards */}
+      {/* page links */}
       <section className="grid gap-6 sm:grid-cols-3">
         {CARDS.map(({ href, icon, step, title, description, action }) => (
           <Link
@@ -102,7 +102,7 @@ export default function HomePage() {
         ))}
       </section>
 
-      {/* Warning */}
+      {/* footer */}
       <p className="text-center text-[10px] font-mono text-slate-500 uppercase tracking-widest">
         Warning: All submissions are irreversible once broadcast to the network.
       </p>

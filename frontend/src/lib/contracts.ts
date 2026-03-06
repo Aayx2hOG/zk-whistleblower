@@ -1,15 +1,14 @@
 import { type Address } from "viem";
 
-// ─── Contract addresses ───────────────────────────────────────────────────────
 // Copy the addresses printed after running `pnpm run deploy:local` and set them
-// in frontend/.env.local  (see .env.local.example)
+// in frontend/.env.local
 
 export const REGISTRY_ADDRESS = (process.env.NEXT_PUBLIC_REGISTRY_ADDRESS ??
   "0x0000000000000000000000000000000000000000") as Address;
 
-// ─── WhistleblowerRegistry ABI ───────────────────────────────────────────────
+
 export const REGISTRY_ABI = [
-  // ── Errors ──
+  // errors 
   {
     type: "error",
     name: "OwnableInvalidOwner",
@@ -20,7 +19,7 @@ export const REGISTRY_ABI = [
     name: "OwnableUnauthorizedAccount",
     inputs: [{ name: "account", type: "address" }],
   },
-  // ── Events ──
+  //Events
   {
     type: "event",
     name: "RootAdded",
@@ -42,7 +41,7 @@ export const REGISTRY_ABI = [
       { indexed: false, name: "timestamp", type: "uint256" },
     ],
   },
-  // ── Read ──
+  // read 
   {
     type: "function",
     name: "owner",
@@ -89,7 +88,7 @@ export const REGISTRY_ABI = [
       },
     ],
   },
-  // ── Write ──
+  // Write
   {
     type: "function",
     name: "addRoot",

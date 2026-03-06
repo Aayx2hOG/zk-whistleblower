@@ -1,7 +1,6 @@
 /**
  * Merkle tree helpers — mirrors test/fixtures/setup.ts exactly so the
  * root computed here matches what was registered on-chain.
- *
  * Depth 10 → 1024 leaves → matches the circuit (levels = 10).
  */
 import { poseidonHash } from "./poseidon";

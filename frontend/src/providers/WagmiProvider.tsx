@@ -12,7 +12,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactNode, useState } from "react";
 
 // Hardhat local network — used for development as-is.
-// For Sepolia add it to the chains array and set NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID.
 const config = getDefaultConfig({
   appName: "ZK Whistleblower",
   projectId:
