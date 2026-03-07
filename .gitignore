@@ -24,5 +24,8 @@
 *.ptau
 *.wtns
 
+# Member key files (contain encrypted secrets)
+/keys
+
 # Environment variables
 .env
