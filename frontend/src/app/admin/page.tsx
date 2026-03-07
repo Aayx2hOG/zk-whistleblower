@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   useWriteContract,
   useWaitForTransactionReceipt,
@@ -10,15 +10,21 @@ import {
 import { REGISTRY_ABI, REGISTRY_ADDRESS } from "@/lib/contracts";
 import { initPoseidon, poseidonHash } from "@/lib/poseidon";
 import { buildMerkleTree } from "@/lib/merkle";
+import {
+  generateSecret,
+  encryptSecret,
+  downloadJSON,
+  type MemberKeyFile,
+} from "@/lib/secretGen";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+
 interface RootEvent {
   root: bigint;
   type: "added" | "revoked";
   blockNumber?: bigint;
 }
 
-// ─── Small reusable status component ────────────────────────────────────────
+
 function TxStatus({
   hash,
   label,
@@ -36,17 +42,32 @@ function TxStatus({
   );
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
+// Main page 
 export default function AdminPage() {
   const { isConnected } = useAccount();
 
-  // ── Build-tree state ──
-  const [secretsInput, setSecretsInput] = useState<string>("");
-  const [builtRoot, setBuiltRoot] = useState<string>("");
-  const [buildError, setBuildError] = useState<string>("");
-  const [building, setBuilding] = useState(false);
+  // Member registration types 
+  interface MemberInput {
+    id: string;
+    password: string;
+  }
+  interface GeneratedMember {
+    id: string;
+    commitment: string;
+    leafIndex: number;
+    keyFile: MemberKeyFile;
+  }
 
-  // ── Add-root state ──
+  // Member registration state
+  const [members, setMembers] = useState<MemberInput[]>([{ id: "", password: "" }]);
+  const [generated, setGenerated] = useState<GeneratedMember[]>([]);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState("");
+
+  // Build tree output state (shared with step 2)
+  const [builtRoot, setBuiltRoot] = useState<string>("");
+
+  //Add root state 
   const [addRootInput, setAddRootInput] = useState<string>("");
   const {
     writeContract: addRoot,
@@ -55,7 +76,7 @@ export default function AdminPage() {
     error: addError,
   } = useWriteContract();
 
-  // ── Revoke-root state ──
+  //Revoke root state
   const [revokeInput, setRevokeInput] = useState<string>("");
   const {
     writeContract: revokeRoot,
@@ -64,8 +85,9 @@ export default function AdminPage() {
     error: revokeError,
   } = useWriteContract();
 
-  // ── Live event log ──
+  //Live event log
   const [events, setEvents] = useState<RootEvent[]>([]);
+  const seenEvents = useRef<Set<string>>(new Set());
 
   useWatchContractEvent({
     address: REGISTRY_ADDRESS,
@@ -73,9 +95,12 @@ export default function AdminPage() {
     eventName: "RootAdded",
     onLogs(logs) {
       logs.forEach((log) => {
+        const key = `${log.transactionHash}-${log.logIndex}`;
+        if (seenEvents.current.has(key)) return;
+        seenEvents.current.add(key);
         if ("args" in log && log.args)
           setEvents((e) => [
-            { root: (log.args as { root: bigint }).root, type: "added" },
+            { root: (log.args as { root: bigint }).root, type: "added", blockNumber: log.blockNumber },
             ...e,
           ]);
       });
@@ -88,43 +113,89 @@ export default function AdminPage() {
     eventName: "RootRevoked",
     onLogs(logs) {
       logs.forEach((log) => {
+        const key = `${log.transactionHash}-${log.logIndex}`;
+        if (seenEvents.current.has(key)) return;
+        seenEvents.current.add(key);
         if ("args" in log && log.args)
           setEvents((e) => [
-            { root: (log.args as { root: bigint }).root, type: "revoked" },
+            { root: (log.args as { root: bigint }).root, type: "revoked", blockNumber: log.blockNumber },
             ...e,
           ]);
       });
     },
   });
 
-  // ── Handlers ──
+  //  Handlers
 
-  const handleBuildTree = useCallback(async () => {
-    setBuildError("");
+  //  Member list helpers 
+  const handleAddMember = () =>
+    setMembers((m) => [...m, { id: "", password: "" }]);
+
+  const handleRemoveMember = (i: number) =>
+    setMembers((m) => m.filter((_, idx) => idx !== i));
+
+  const handleMemberChange = (
+    i: number,
+    field: "id" | "password",
+    val: string
+  ) =>
+    setMembers((m) =>
+      m.map((mem, idx) => (idx === i ? { ...mem, [field]: val } : mem))
+    );
+
+  //  Secret generation 
+  const handleGenerateSecrets = useCallback(async () => {
+    setGenError("");
+    setGenerated([]);
     setBuiltRoot("");
-    setBuilding(true);
+    setGenerating(true);
     try {
       await initPoseidon();
-      const lines = secretsInput
-        .split(/[\n,]+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-      if (!lines.length) throw new Error("Enter at least one secret");
-      const secrets = lines.map((s) => {
-        const n = BigInt(s);
-        if (n < 0n) throw new Error(`Negative secret: ${s}`);
-        return n;
-      });
-      const commitments = secrets.map((s) => poseidonHash([s]));
+      const results: GeneratedMember[] = [];
+      for (const [idx, mem] of members.entries()) {
+        if (!mem.id.trim())
+          throw new Error(`Member at row ${idx + 1} has no ID`);
+        const secret = generateSecret();
+        const commitment = poseidonHash([secret]);
+        // Fall back to member ID as password when none provided
+        const pwd = mem.password.trim() || mem.id.trim();
+        const encrypted = await encryptSecret(secret, pwd);
+        results.push({
+          id: mem.id.trim(),
+          commitment: commitment.toString(),
+          leafIndex: idx,
+          keyFile: {
+            memberId: mem.id.trim(),
+            commitment: commitment.toString(),
+            encrypted,
+          },
+        });
+      }
+      setGenerated(results);
+      const commitments = results.map((r) => BigInt(r.commitment));
       const { root } = buildMerkleTree(commitments);
       setBuiltRoot(root.toString());
       setAddRootInput(root.toString());
     } catch (e: unknown) {
-      setBuildError(e instanceof Error ? e.message : String(e));
+      setGenError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBuilding(false);
+      setGenerating(false);
     }
-  }, [secretsInput]);
+  }, [members]);
+
+  const handleDownloadKeyFile = (m: GeneratedMember) =>
+    downloadJSON(m.keyFile, `${m.id}.json`);
+
+  const handleDownloadManifest = () =>
+    downloadJSON(
+      {
+        commitments: generated.map((m) => m.commitment),
+        root: builtRoot,
+        memberCount: generated.length,
+        treeDepth: 10,
+      },
+      "manifest.json"
+    );
 
   const handleAddRoot = () => {
     if (!addRootInput) return;
@@ -171,54 +242,138 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* ── Step 1: Build Tree ─────────────────────────────────────────── */}
+
       <section className="card space-y-6">
         <div className="flex justify-between items-start mb-2">
           <div>
-            <p className="step-label">01_TREE_CONSTRUCTION</p>
-            <h2 className="section-heading">Build Merkle Tree</h2>
+            <p className="step-label">01_MEMBER_REGISTRATION</p>
+            <h2 className="section-heading">Generate Member Secrets</h2>
           </div>
-          <span className="material-symbols-outlined text-white/20">account_tree</span>
+          <span className="material-symbols-outlined text-white/20">group_add</span>
         </div>
         <p className="text-xs text-slate-500 font-mono">
-          Enter one secret per line. Each secret is hashed via Poseidon and
-          assembled into a binary Merkle tree locally.
+          Add member IDs and optional passwords. A random cryptographic secret
+          is generated for each member, encrypted with their password, and
+          packaged into a downloadable key file. The Merkle root is computed
+          from commitments and auto-filled below.
         </p>
-        <div>
-          <label className="label">Member secrets</label>
-          <textarea
-            className="input h-28 resize-none font-mono text-xs"
-            placeholder={"123456789\n987654321\n555555555"}
-            value={secretsInput}
-            onChange={(e) => setSecretsInput(e.target.value)}
-          />
+
+        {/* Member rows */}
+        <div className="space-y-2">
+          <div className="grid grid-cols-[1fr_1fr_2rem] gap-2 mb-1">
+            <span className="label">Member ID</span>
+            <span className="label">Password</span>
+            <span />
+          </div>
+          {members.map((mem, i) => (
+            <div key={i} className="grid grid-cols-[1fr_1fr_2rem] gap-2 items-center">
+              <input
+                className="input font-mono text-xs py-3"
+                placeholder="e.g. alice"
+                value={mem.id}
+                onChange={(e) => handleMemberChange(i, "id", e.target.value)}
+              />
+              <input
+                className="input font-mono text-xs py-3"
+                type="password"
+                placeholder="leave blank → use ID"
+                value={mem.password}
+                onChange={(e) =>
+                  handleMemberChange(i, "password", e.target.value)
+                }
+              />
+              <button
+                className="text-red-500 hover:text-red-400 disabled:opacity-30 text-lg leading-none"
+                onClick={() => handleRemoveMember(i)}
+                disabled={members.length === 1}
+                title="Remove member"
+              >
+                ×
+              </button>
+            </div>
+          ))}
         </div>
-        <button
-          className="btn-primary"
-          onClick={handleBuildTree}
-          disabled={building || !secretsInput.trim()}
-        >
-          {building ? "Building…" : "Build Tree"}
-        </button>
-        {buildError && (
+
+        <div className="flex gap-3">
+          <button className="btn-ghost flex-1" onClick={handleAddMember}>
+            + Add Member
+          </button>
+          <button
+            className="btn-primary flex-[2]"
+            onClick={handleGenerateSecrets}
+            disabled={generating || !members.some((m) => m.id.trim())}
+          >
+            {generating ? "Generating…" : "Generate Secrets"}
+          </button>
+        </div>
+
+        {genError && (
           <p className="bg-red-900/30 border border-red-500/30 p-3 text-xs text-red-400">
-            {buildError}
+            {genError}
           </p>
         )}
-        {builtRoot && (
-          <div className="bg-white/5 border border-white/10 p-4">
-            <p className="text-[10px] font-mono text-slate-400 mb-2">COMPUTED_MERKLE_ROOT</p>
-            <p className="break-all font-mono text-xs text-white">
-              {builtRoot}
+
+        {generated.length > 0 && (
+          <>
+            {/* Per-member results */}
+            <div className="space-y-1">
+              <p className="label">Generated members</p>
+              {generated.map((m) => (
+                <div
+                  key={m.id}
+                  className="flex items-center gap-3 bg-white/5 border border-white/10 p-3"
+                >
+                  <span className="font-mono text-xs text-white w-20 shrink-0 truncate">
+                    #{m.leafIndex} {m.id}
+                  </span>
+                  <span className="font-mono text-xs text-slate-500 flex-1 truncate">
+                    {m.commitment.slice(0, 22)}…
+                  </span>
+                  <button
+                    className="btn-ghost text-xs py-1 px-3 shrink-0"
+                    onClick={() => handleDownloadKeyFile(m)}
+                  >
+                    ↓ {m.id}.json
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Manifest + computed root */}
+            <div className="flex gap-3">
+              <button
+                className="btn-ghost flex-1"
+                onClick={handleDownloadManifest}
+              >
+                ↓ Download manifest.json
+              </button>
+            </div>
+            <p className="text-[10px] font-mono text-slate-600">
+              Share each <span className="text-slate-400">{'<id>.json'}</span> with
+              the corresponding member (they decrypt it with their password to
+              retrieve their secret). Share{" "}
+              <span className="text-slate-400">manifest.json</span> with all
+              members so they can rebuild the Merkle path on the Submit page.
             </p>
-            <p className="mt-2 text-[10px] font-mono text-slate-500">
-              ↳ Automatically filled into the Add Root field below.
-            </p>
-          </div>
+
+            {builtRoot && (
+              <div className="bg-white/5 border border-white/10 p-4">
+                <p className="text-[10px] font-mono text-slate-400 mb-2">
+                  COMPUTED_MERKLE_ROOT
+                </p>
+                <p className="break-all font-mono text-xs text-white">
+                  {builtRoot}
+                </p>
+                <p className="mt-2 text-[10px] font-mono text-slate-500">
+                  ↳ Automatically filled into the Register Root field below.
+                </p>
+              </div>
+            )}
+          </>
         )}
       </section>
 
-      {/* ── Step 2: Add Root ───────────────────────────────────────────── */}
+
       <section className="card space-y-6">
         <div className="flex justify-between items-start mb-2">
           <div>
@@ -251,7 +406,7 @@ export default function AdminPage() {
         )}
       </section>
 
-      {/* ── Revoke Root ────────────────────────────────────────────────── */}
+
       <section className="card space-y-6">
         <div className="flex justify-between items-start mb-2">
           <div>
@@ -284,7 +439,7 @@ export default function AdminPage() {
         )}
       </section>
 
-      {/* ── Live Event Log ─────────────────────────────────────────────── */}
+
       {events.length > 0 && (
         <section className="card space-y-4">
           <div className="flex justify-between items-start">

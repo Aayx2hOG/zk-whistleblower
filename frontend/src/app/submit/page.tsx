@@ -7,11 +7,12 @@ import {
   useAccount,
 } from "wagmi";
 import { REGISTRY_ABI, REGISTRY_ADDRESS, CATEGORIES } from "@/lib/contracts";
-import { initPoseidon, poseidonHash } from "@/lib/poseidon";
+import { initPoseidon } from "@/lib/poseidon";
 import { buildMerkleTree } from "@/lib/merkle";
 import { generateZKProof, type FormattedProof } from "@/lib/zkProof";
+import { decryptSecret, type MemberKeyFile } from "@/lib/secretGen";
 
-// ─── Step indicator ───────────────────────────────────────────────────────────
+//  Step indicator 
 function Step({
   n,
   label,
@@ -40,11 +41,19 @@ function Step({
   );
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
+//  Main page 
 export default function SubmitPage() {
   const { isConnected } = useAccount();
 
-  // ── Form fields ──
+  // Key file import state 
+  const [keyFileJson, setKeyFileJson] = useState("");
+  const [keyFilePassword, setKeyFilePassword] = useState("");
+  const [keyImportStatus, setKeyImportStatus] = useState<
+    "idle" | "decrypting" | "done" | "error"
+  >("idle");
+  const [keyImportError, setKeyImportError] = useState("");
+
+  //  Form fields 
   const [secret, setSecret] = useState("");
   const [leafIndex, setLeafIndex] = useState("0");
   const [orgSecrets, setOrgSecrets] = useState("");
@@ -52,7 +61,7 @@ export default function SubmitPage() {
   const [encryptedCID, setEncryptedCID] = useState("");
   const [category, setCategory] = useState<0 | 1 | 2 | 3>(0);
 
-  // ── Proof state ──
+  //  Proof state 
   const [proofStatus, setProofStatus] = useState<
     "idle" | "generating" | "ready" | "error"
   >("idle");
@@ -60,7 +69,7 @@ export default function SubmitPage() {
   const [proof, setProof] = useState<FormattedProof | null>(null);
   const [proofError, setProofError] = useState("");
 
-  // ── TX state ──
+  // tx state 
   const {
     writeContract,
     data: txHash,
@@ -73,7 +82,33 @@ export default function SubmitPage() {
   const log = (msg: string) =>
     setProofLog((l) => [...l, `${new Date().toLocaleTimeString()} ${msg}`]);
 
-  // ── Proof generation ──
+  //  Key file import 
+  const handleKeyFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setKeyFileJson((ev.target?.result as string) ?? "");
+    reader.readAsText(file);
+    setKeyImportStatus("idle");
+    setKeyImportError("");
+  };
+
+  const handleDecryptKeyFile = useCallback(async () => {
+    setKeyImportError("");
+    setKeyImportStatus("decrypting");
+    try {
+      const parsed: MemberKeyFile = JSON.parse(keyFileJson);
+      if (!parsed.encrypted || !parsed.commitment)
+        throw new Error("Not a valid key file.");
+      const decrypted = await decryptSecret(parsed.encrypted, keyFilePassword);
+      setSecret(decrypted.toString());
+      setKeyImportStatus("done");
+    } catch (e: unknown) {
+      setKeyImportError(e instanceof Error ? e.message : String(e));
+      setKeyImportStatus("error");
+    }
+  }, [keyFileJson, keyFilePassword]);
+
   const handleGenerateProof = useCallback(async () => {
     setProofError("");
     setProof(null);
@@ -94,9 +129,9 @@ export default function SubmitPage() {
         .split(/[\n,]+/)
         .map((s) => s.trim())
         .filter(Boolean);
-      if (!lines.length) throw new Error("Enter at least one organisation secret");
-      const orgSecretBigs = lines.map((s) => BigInt(s));
-      const commitments = orgSecretBigs.map((s) => poseidonHash([s]));
+      if (!lines.length) throw new Error("Enter at least one organisation commitment");
+      // Lines are already commitments (from manifest.json) — no Poseidon re-hashing needed.
+      const commitments = lines.map((s) => BigInt(s));
 
       log(`Building Merkle tree (${commitments.length} members)…`);
       const tree = buildMerkleTree(commitments);
@@ -124,7 +159,7 @@ export default function SubmitPage() {
     }
   }, [secret, leafIndex, orgSecrets, externalNullifier]);
 
-  // ── Submit report ──
+  // Submit report 
   const handleSubmit = () => {
     if (!proof) return;
     writeContract({
@@ -179,7 +214,7 @@ export default function SubmitPage() {
         <Step n={3} label="Submit on-chain" active={currentStep === 2} done={currentStep > 2} />
       </div>
 
-      {/* ── Form ─────────────────────────────────────────────────────────── */}
+      {/* Form  */}
       <section className="card space-y-6">
         <div className="flex justify-between items-start mb-2">
           <div>
@@ -191,6 +226,62 @@ export default function SubmitPage() {
 
         <div className="grid gap-6 sm:grid-cols-2">
           <div>
+            {/* Key file import */}
+            <div className="mb-4 bg-white/[0.03] border border-white/10 p-4 space-y-3">
+              <p className="label">Import key file (optional)</p>
+              <p className="text-[10px] font-mono text-slate-600">
+                Upload the <span className="text-slate-400">{'<id>.json'}</span>{" "}
+                file you received from your admin — your secret is decrypted
+                locally and auto-fills the field below.
+              </p>
+              <input
+                type="file"
+                accept=".json,application/json"
+                className="text-xs font-mono text-slate-400 file:mr-3 file:border file:border-white/20
+                  file:bg-transparent file:text-white file:text-xs file:font-bold file:uppercase
+                  file:tracking-wider file:px-3 file:py-1 file:cursor-pointer
+                  hover:file:border-white hover:file:text-white cursor-pointer"
+                onChange={handleKeyFileChange}
+                disabled={proofStatus === "generating"}
+              />
+              {keyFileJson && (
+                <>
+                  <div className="flex gap-2">
+                    <input
+                      className="input font-mono text-xs py-2 flex-1"
+                      type="password"
+                      placeholder="Your password"
+                      value={keyFilePassword}
+                      onChange={(e) => setKeyFilePassword(e.target.value)}
+                      disabled={proofStatus === "generating"}
+                    />
+                    <button
+                      className="btn-ghost text-xs px-4 py-2 shrink-0"
+                      onClick={handleDecryptKeyFile}
+                      disabled={
+                        keyImportStatus === "decrypting" ||
+                        proofStatus === "generating"
+                      }
+                    >
+                      {keyImportStatus === "decrypting"
+                        ? "Decrypting…"
+                        : "Decrypt"}
+                    </button>
+                  </div>
+                  {keyImportStatus === "done" && (
+                    <p className="text-xs text-green-400 font-mono">
+                      ✓ Secret decrypted and filled below.
+                    </p>
+                  )}
+                  {keyImportStatus === "error" && (
+                    <p className="text-xs text-red-400 font-mono">
+                      {keyImportError}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+
             <label className="label">Your secret</label>
             <input
               className="input font-mono text-xs"
@@ -236,22 +327,23 @@ export default function SubmitPage() {
         </div>
 
         <div>
-          <label className="label">All organisation secrets (to rebuild tree)</label>
+          <label className="label">All organisation commitments (from manifest.json)</label>
           <textarea
             className="input h-24 resize-none font-mono text-xs"
-            placeholder={"123456789\n987654321\n555555555"}
+            placeholder={"Paste the \"commitments\" array from manifest.json\n(one commitment per line)"}
             value={orgSecrets}
             onChange={(e) => setOrgSecrets(e.target.value)}
             disabled={proofStatus === "generating"}
           />
           <p className="mt-1 text-[10px] font-mono text-slate-600">
-            Admin shares these before the round. Used locally to compute Merkle
-            path — never sent anywhere.
+            Admin shares <span className="text-slate-400">manifest.json</span>{" "}
+            after generating secrets. Paste the commitment values here —
+            used locally to compute your Merkle path, never sent anywhere.
           </p>
         </div>
       </section>
 
-      {/* ── Report Details ─────────────────────────────────────────────── */}
+      {/* Report Details  */}
       <section className="card space-y-6">
         <div className="flex justify-between items-start mb-2">
           <div>
@@ -343,7 +435,7 @@ export default function SubmitPage() {
         )}
       </section>
 
-      {/* ── Proof summary ────────────────────────────────────────────────── */}
+      {/* Proof summary  */}
       {proof && (
         <section className="card space-y-4">
           <div className="flex justify-between items-start">

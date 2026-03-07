@@ -1,6 +1,5 @@
 /**
  * Browser-side ZK proof generation using snarkjs.
- *
  * The circuit WASM and zkey are fetched from /circuits/ (public/circuits/).
  * Run `pnpm run copy-artifacts` from the frontend directory to populate that
  * folder from the parent project's circuits-artifacts/.
