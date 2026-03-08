@@ -11,8 +11,9 @@ import { initPoseidon } from "@/lib/poseidon";
 import { buildMerkleTree } from "@/lib/merkle";
 import { generateZKProof, type FormattedProof } from "@/lib/zkProof";
 import { decryptSecret, type MemberKeyFile } from "@/lib/secretGen";
+import { encryptReport } from "@/lib/encryption";
+import { uploadEncryptedReport } from "@/lib/ipfs";
 
-//  Step indicator 
 function Step({
   n,
   label,
@@ -41,11 +42,9 @@ function Step({
   );
 }
 
-//  Main page 
 export default function SubmitPage() {
   const { isConnected } = useAccount();
 
-  // Key file import state 
   const [keyFileJson, setKeyFileJson] = useState("");
   const [keyFilePassword, setKeyFilePassword] = useState("");
   const [keyImportStatus, setKeyImportStatus] = useState<
@@ -53,7 +52,6 @@ export default function SubmitPage() {
   >("idle");
   const [keyImportError, setKeyImportError] = useState("");
 
-  //  Form fields 
   const [secret, setSecret] = useState("");
   const [leafIndex, setLeafIndex] = useState("0");
   const [orgSecrets, setOrgSecrets] = useState("");
@@ -61,7 +59,11 @@ export default function SubmitPage() {
   const [encryptedCID, setEncryptedCID] = useState("");
   const [category, setCategory] = useState<0 | 1 | 2 | 3>(0);
 
-  //  Proof state 
+  const [reportText, setReportText] = useState("");
+  const [encryptionPassword, setEncryptionPassword] = useState("");
+  const [uploadStatus, setUploadStatus] = useState<"idle" | "working" | "done" | "error">("idle");
+  const [uploadError, setUploadError] = useState("");
+
   const [proofStatus, setProofStatus] = useState<
     "idle" | "generating" | "ready" | "error"
   >("idle");
@@ -69,7 +71,6 @@ export default function SubmitPage() {
   const [proof, setProof] = useState<FormattedProof | null>(null);
   const [proofError, setProofError] = useState("");
 
-  // tx state 
   const {
     writeContract,
     data: txHash,
@@ -82,7 +83,6 @@ export default function SubmitPage() {
   const log = (msg: string) =>
     setProofLog((l) => [...l, `${new Date().toLocaleTimeString()} ${msg}`]);
 
-  //  Key file import 
   const handleKeyFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -109,6 +109,20 @@ export default function SubmitPage() {
     }
   }, [keyFileJson, keyFilePassword]);
 
+  const handleEncryptAndUpload = useCallback(async () => {
+    setUploadError("");
+    setUploadStatus("working");
+    try {
+      const blob = await encryptReport(reportText, encryptionPassword);
+      const cid = await uploadEncryptedReport(blob);
+      setEncryptedCID(cid);
+      setUploadStatus("done");
+    } catch (e: unknown) {
+      setUploadError(e instanceof Error ? e.message : String(e));
+      setUploadStatus("error");
+    }
+  }, [reportText, encryptionPassword]);
+
   const handleGenerateProof = useCallback(async () => {
     setProofError("");
     setProof(null);
@@ -119,18 +133,16 @@ export default function SubmitPage() {
       log("Initialising Poseidon hasher…");
       await initPoseidon();
 
-      // Parse inputs
       const secretBig = BigInt(secret.trim());
       const leafIdx = parseInt(leafIndex, 10);
       const extNull = BigInt(externalNullifier.trim() || "42");
 
-      // Build local Merkle tree from org secrets so we can compute the path
+      // Each line is a commitment already hashed by the admin — paste from manifest.json as-is
       const lines = orgSecrets
         .split(/[\n,]+/)
         .map((s) => s.trim())
         .filter(Boolean);
       if (!lines.length) throw new Error("Enter at least one organisation commitment");
-      // Lines are already commitments (from manifest.json) — no Poseidon re-hashing needed.
       const commitments = lines.map((s) => BigInt(s));
 
       log(`Building Merkle tree (${commitments.length} members)…`);
@@ -159,7 +171,6 @@ export default function SubmitPage() {
     }
   }, [secret, leafIndex, orgSecrets, externalNullifier]);
 
-  // Submit report 
   const handleSubmit = () => {
     if (!proof) return;
     writeContract({
@@ -173,7 +184,7 @@ export default function SubmitPage() {
         proof.root,
         proof.nullifierHash,
         proof.externalNullifier,
-        encryptedCID || "QmDummyCID_for_demo",
+        encryptedCID,
         category,
       ],
     });
@@ -207,14 +218,12 @@ export default function SubmitPage() {
         </div>
       </div>
 
-      {/* Step indicators */}
       <div className="flex gap-8">
         <Step n={1} label="Fill form" active={currentStep === 0} done={currentStep > 0} />
         <Step n={2} label="Generate proof" active={currentStep === 1} done={currentStep > 1} />
         <Step n={3} label="Submit on-chain" active={currentStep === 2} done={currentStep > 2} />
       </div>
 
-      {/* Form  */}
       <section className="card space-y-6">
         <div className="flex justify-between items-start mb-2">
           <div>
@@ -226,7 +235,6 @@ export default function SubmitPage() {
 
         <div className="grid gap-6 sm:grid-cols-2">
           <div>
-            {/* Key file import */}
             <div className="mb-4 bg-white/[0.03] border border-white/10 p-4 space-y-3">
               <p className="label">Import key file (optional)</p>
               <p className="text-[10px] font-mono text-slate-600">
@@ -343,7 +351,6 @@ export default function SubmitPage() {
         </div>
       </section>
 
-      {/* Report Details  */}
       <section className="card space-y-6">
         <div className="flex justify-between items-start mb-2">
           <div>
@@ -354,15 +361,54 @@ export default function SubmitPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="label">Encrypted CID (IPFS)</label>
-            <input
-              className="input font-mono text-xs"
-              placeholder="QmAbcdef… (or leave blank for demo)"
-              value={encryptedCID}
-              onChange={(e) => setEncryptedCID(e.target.value)}
-              disabled={proofStatus === "generating"}
-            />
+          <div className="space-y-4">
+            <div>
+              <label className="label">Report text</label>
+              <textarea
+                className="input h-28 resize-none text-sm"
+                placeholder="Describe the wrongdoing in detail…"
+                value={reportText}
+                onChange={(e) => setReportText(e.target.value)}
+                disabled={proofStatus === "generating" || uploadStatus === "working"}
+              />
+            </div>
+            <div>
+              <label className="label">Reviewer encryption password</label>
+              <input
+                className="input font-mono text-sm"
+                type="password"
+                placeholder="Share this with your trusted reviewer"
+                value={encryptionPassword}
+                onChange={(e) => setEncryptionPassword(e.target.value)}
+                disabled={proofStatus === "generating" || uploadStatus === "working"}
+              />
+              <p className="mt-1 text-[10px] font-mono text-slate-600">
+                Your report is AES-256-GCM encrypted in-browser — the server only sees ciphertext.
+              </p>
+            </div>
+            <button
+              className="btn-ghost text-xs px-4 py-2"
+              onClick={handleEncryptAndUpload}
+              disabled={
+                !reportText || !encryptionPassword ||
+                uploadStatus === "working" || uploadStatus === "done" ||
+                proofStatus === "generating"
+              }
+            >
+              {uploadStatus === "working"
+                ? "ENCRYPTING & UPLOADING…"
+                : uploadStatus === "done"
+                  ? "UPLOADED ✓"
+                  : "ENCRYPT & UPLOAD TO IPFS"}
+            </button>
+            {uploadStatus === "done" && encryptedCID && (
+              <p className="text-[10px] font-mono text-green-400 break-all">
+                ✓ CID: {encryptedCID}
+              </p>
+            )}
+            {uploadStatus === "error" && (
+              <p className="text-[10px] font-mono text-red-400">{uploadError}</p>
+            )}
           </div>
           <div>
             <label className="label">Category</label>
@@ -381,7 +427,6 @@ export default function SubmitPage() {
           </div>
         </div>
 
-        {/* Progress indicator */}
         {proofStatus === "generating" && (
           <div className="space-y-2">
             <div className="flex justify-between text-[10px] font-mono text-slate-400">
@@ -435,7 +480,6 @@ export default function SubmitPage() {
         )}
       </section>
 
-      {/* Proof summary  */}
       {proof && (
         <section className="card space-y-4">
           <div className="flex justify-between items-start">
@@ -465,14 +509,14 @@ export default function SubmitPage() {
             <button
               className="btn-cta"
               onClick={handleSubmit}
-              disabled={txPending || txLoading || txSuccess}
+              disabled={txPending || txLoading || txSuccess || !encryptedCID}
             >
               <span>
                 {txPending || txLoading
                   ? "SUBMITTING…"
                   : txSuccess
                     ? "SUBMITTED ✓"
-                    : "ENCRYPT & SUBMIT TO BLOCKCHAIN"}
+                    : "SUBMIT TO BLOCKCHAIN"}
               </span>
               <span className="material-symbols-outlined">database</span>
             </button>

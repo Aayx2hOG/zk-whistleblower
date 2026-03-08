@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   useReadContract,
   usePublicClient,
   useWatchContractEvent,
 } from "wagmi";
 import { REGISTRY_ABI, REGISTRY_ADDRESS, CATEGORIES } from "@/lib/contracts";
+import { decryptReport } from "@/lib/encryption";
+import { fetchFromIPFS } from "@/lib/ipfs";
 
 // types
 interface Report {
@@ -39,6 +41,26 @@ function CategoryBadge({ category }: { category: number }) {
 //report card
 function ReportCard({ report }: { report: Report }) {
   const date = new Date(Number(report.timestamp) * 1000).toLocaleString();
+
+  const [password, setPassword] = useState("");
+  const [decryptStatus, setDecryptStatus] = useState<"idle" | "working" | "done" | "error">("idle");
+  const [decryptedText, setDecryptedText] = useState("");
+  const [decryptError, setDecryptError] = useState("");
+
+  const handleDecrypt = useCallback(async () => {
+    setDecryptError("");
+    setDecryptStatus("working");
+    try {
+      const blob = await fetchFromIPFS(report.encryptedCID);
+      const plaintext = await decryptReport(blob, password);
+      setDecryptedText(plaintext);
+      setDecryptStatus("done");
+    } catch (e: unknown) {
+      setDecryptError(e instanceof Error ? e.message : String(e));
+      setDecryptStatus("error");
+    }
+  }, [report.encryptedCID, password]);
+
   return (
     <div className="card space-y-3">
       <div className="flex items-center justify-between">
@@ -65,6 +87,36 @@ function ReportCard({ report }: { report: Report }) {
           {report.merkleRoot.toString()}
         </p>
       </div>
+
+      {/* Decrypt panel */}
+      <div className="border-t border-white/10 pt-3 space-y-2">
+        <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Decrypt report</p>
+        <div className="flex gap-2">
+          <input
+            className="input font-mono text-xs py-2 flex-1"
+            type="password"
+            placeholder="Reviewer password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={decryptStatus === "working" || decryptStatus === "done"}
+          />
+          <button
+            className="btn-ghost text-xs px-4 py-2 shrink-0"
+            onClick={handleDecrypt}
+            disabled={!password || decryptStatus === "working" || decryptStatus === "done"}
+          >
+            {decryptStatus === "working" ? "Decrypting…" : decryptStatus === "done" ? "Decrypted ✓" : "Decrypt"}
+          </button>
+        </div>
+        {decryptStatus === "done" && (
+          <div className="bg-black/40 border border-green-500/30 p-3 text-xs font-mono text-green-300 whitespace-pre-wrap break-words">
+            {decryptedText}
+          </div>
+        )}
+        {decryptStatus === "error" && (
+          <p className="text-[10px] font-mono text-red-400">{decryptError}</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -73,22 +125,48 @@ function ReportCard({ report }: { report: Report }) {
 export default function ReviewerPage() {
   const publicClient = usePublicClient();
   const [reports, setReports] = useState<Report[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-
-  const { data: reportCount } = useReadContract({
+  const {
+    data: reportCount,
+    isLoading: countLoading,
+    error: countError,
+  } = useReadContract({
     address: REGISTRY_ADDRESS,
     abi: REGISTRY_ABI,
     functionName: "getReportCount",
   });
 
-
   useEffect(() => {
-    if (reportCount === undefined) return;
+    // Still waiting for the count RPC call
+    if (countLoading) {
+      setLoading(true);
+      return;
+    }
+
+    // Count RPC failed (wrong network, node not running, etc.)
+    if (countError) {
+      setError(
+        `Could not reach contract: ${countError.message}. Is your local Hardhat node running and the wallet connected to localhost:8545?`
+      );
+      setLoading(false);
+      return;
+    }
+
+    if (reportCount === undefined) {
+      setLoading(false);
+      return;
+    }
 
     const count = Number(reportCount);
     if (count === 0) {
+      setLoading(false);
+      return;
+    }
+
+    if (!publicClient) {
+      setError("No RPC client available — connect your wallet first.");
       setLoading(false);
       return;
     }
@@ -98,7 +176,7 @@ export default function ReviewerPage() {
       setError("");
       try {
         const calls = Array.from({ length: count }, (_, i) =>
-          publicClient?.readContract({
+          publicClient.readContract({
             address: REGISTRY_ADDRESS,
             abi: REGISTRY_ABI,
             functionName: "getReport",
@@ -132,7 +210,7 @@ export default function ReviewerPage() {
         setLoading(false);
       }
     })();
-  }, [reportCount, publicClient]);
+  }, [reportCount, countLoading, countError, publicClient]);
 
 //real time report fetch
   useWatchContractEvent({

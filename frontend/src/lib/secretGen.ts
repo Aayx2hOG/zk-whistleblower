@@ -1,14 +1,6 @@
-/**
- * Browser-compatible secret generation and AES-256-GCM encryption/decryption.
- * Mirrors the crypto logic in scripts/register-members.ts using the Web Crypto API
- * so key files produced here are interchangeable with those from the script.
- *
- * Layout of an encrypted blob:
- *   - salt  : 16 bytes (PBKDF2 salt, hex)
- *   - iv    : 12 bytes (AES-GCM nonce, hex)
- *   - ciphertext : n bytes (encrypted secret digits, hex)
- *   - tag   : 16 bytes (AES-GCM auth tag, hex)
- */
+// Browser-side secret generation and encryption for admin key file creation.
+// Mirrors the Node.js logic in scripts/register-members.ts so key files
+// generated here are compatible with those from the script.
 
 export interface EncryptedSecret {
   iv: string;
@@ -30,8 +22,6 @@ export interface MemberManifest {
   treeDepth: number;
 }
 
-//  Hex helpers 
-
 function bytesToHex(buf: Uint8Array): string {
   return Array.from(buf)
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -49,24 +39,14 @@ function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   return view;
 }
 
-//  Secret generation 
-
-/**
- * Generates a cryptographically random 31-byte secret that fits inside the
- * BN128 scalar field (same as the Node.js script).
- */
+// 31 bytes keeps the value inside the BN128 scalar field, same as the Node.js script.
 export function generateSecret(): bigint {
   const bytes = new Uint8Array(31);
   crypto.getRandomValues(bytes);
   return BigInt("0x" + bytesToHex(bytes));
 }
 
-//  Encryption 
-
-/**
- * Encrypts `secret` with AES-256-GCM using a PBKDF2-derived key.
- * Produces the same format as the Node.js `encryptSecret` in register-members.ts.
- */
+// Produces the same AES-256-GCM format as the Node.js encryptSecret in register-members.ts.
 export async function encryptSecret(
   secret: bigint,
   password: string

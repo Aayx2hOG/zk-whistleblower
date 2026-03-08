@@ -1,9 +1,6 @@
-/**
- * Browser-side ZK proof generation using snarkjs.
- * The circuit WASM and zkey are fetched from /circuits/ (public/circuits/).
- * Run `pnpm run copy-artifacts` from the frontend directory to populate that
- * folder from the parent project's circuits-artifacts/.
- */
+// Generates a Groth16 membership proof in the browser using snarkjs.
+// The circuit WASM and final zkey are served from /public/circuits/.
+// Run `pnpm run copy-artifacts` to sync them from the root circuits-artifacts/ folder.
 import { getMerkleProof, type MerkleTree, TREE_DEPTH } from "./merkle";
 import { poseidonHash } from "./poseidon";
 
@@ -30,10 +27,6 @@ async function fetchBytes(url: string): Promise<Uint8Array> {
   return new Uint8Array(await res.arrayBuffer());
 }
 
-/**
- * Generates a Groth16 membership proof.
- * Fetches wasm + zkey from public/circuits/ at runtime.
- */
 export async function generateZKProof(input: ProofInput): Promise<FormattedProof> {
   const { initPoseidon } = await import("./poseidon");
   await initPoseidon();
@@ -53,7 +46,7 @@ export async function generateZKProof(input: ProofInput): Promise<FormattedProof
     pathIndices: pathIndices.map((x) => x.toString()),
   };
 
-  // Dynamic import so snarkjs is never bundled for SSR
+  // snarkjs is huge, so we import it dynamically to keep it out of the SSR bundle
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const snarkjs = await import("snarkjs") as any;
   const [wasm, zkey] = await Promise.all([

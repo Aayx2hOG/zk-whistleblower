@@ -1,8 +1,6 @@
-/**
- * Merkle tree helpers — mirrors test/fixtures/setup.ts exactly so the
- * root computed here matches what was registered on-chain.
- * Depth 10 → 1024 leaves → matches the circuit (levels = 10).
- */
+// Poseidon Merkle tree — must match the circuit and test/fixtures/setup.ts exactly
+// so the root we compute here is the same root that was registered on-chain.
+// Tree depth 10 = 1024 leaf slots, matching the circuit's `levels` parameter.
 import { poseidonHash } from "./poseidon";
 
 export const TREE_DEPTH = 10;
@@ -12,10 +10,7 @@ export interface MerkleTree {
   layers: bigint[][];
 }
 
-/**
- * Build a Poseidon Merkle tree from a list of leaf commitments.
- * Pads with zeros to fill 2^TREE_DEPTH leaves.
- */
+// Pads leaves with zeros to fill all 1024 slots, then hashes up the tree level by level.
 export function buildMerkleTree(leaves: bigint[]): MerkleTree {
   const totalLeaves = 2 ** TREE_DEPTH;
   const padded = [...leaves];
@@ -36,9 +31,8 @@ export function buildMerkleTree(leaves: bigint[]): MerkleTree {
   return { root: layers[TREE_DEPTH][0], layers };
 }
 
-/**
- * Compute the sibling path for `leafIndex` in the tree.
- */
+// Returns the sibling elements and left/right indices needed to reconstruct
+// the root from a given leaf — this is what the circuit takes as private input.
 export function getMerkleProof(
   layers: bigint[][],
   leafIndex: number
