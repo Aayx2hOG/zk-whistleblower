@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   useWriteContract,
   useWaitForTransactionReceipt,
@@ -13,6 +13,11 @@ import { generateZKProof, type FormattedProof } from "@/lib/zkProof";
 import { decryptSecret, type MemberKeyFile } from "@/lib/secretGen";
 import { encryptReport } from "@/lib/encryption";
 import { uploadEncryptedReport } from "@/lib/ipfs";
+import { getDemoMembers, type DemoMember } from "@/lib/demoOrg";
+
+// Hardhat localhost rejects tx gas above 16,777,216 (0x1000000).
+// Keep an explicit cap below that so wallet fallback gas values do not fail early.
+const SUBMIT_REPORT_GAS_LIMIT = 12_000_000n;
 
 function Step({
   n,
@@ -51,6 +56,9 @@ export default function SubmitPage() {
     "idle" | "decrypting" | "done" | "error"
   >("idle");
   const [keyImportError, setKeyImportError] = useState("");
+  const [demoMembers, setDemoMembers] = useState<DemoMember[]>([]);
+  const [selectedDemoId, setSelectedDemoId] = useState("");
+  const [demoLoadMessage, setDemoLoadMessage] = useState("");
 
   const [secret, setSecret] = useState("");
   const [leafIndex, setLeafIndex] = useState("0");
@@ -82,6 +90,37 @@ export default function SubmitPage() {
 
   const log = (msg: string) =>
     setProofLog((l) => [...l, `${new Date().toLocaleTimeString()} ${msg}`]);
+
+  useEffect(() => {
+    const members = getDemoMembers();
+    setDemoMembers(members);
+    if (members.length && !selectedDemoId) {
+      setSelectedDemoId(members[0].id);
+    }
+  }, [selectedDemoId]);
+
+  const handleLoadDemoContext = useCallback(() => {
+    const members = getDemoMembers();
+    setDemoMembers(members);
+    setDemoLoadMessage("");
+
+    if (!members.length) {
+      setDemoLoadMessage("No demo members found. Join on the Join Org page first.");
+      return;
+    }
+
+    const selected = members.find((m) => m.id === selectedDemoId) ?? members[0];
+    const commitments = members.map((m) => m.commitment);
+    const idx = commitments.findIndex((c) => c === selected.commitment);
+
+    setSelectedDemoId(selected.id);
+    setSecret(selected.secret);
+    setLeafIndex(String(idx));
+    setOrgSecrets(commitments.join("\n"));
+    setDemoLoadMessage(
+      `Loaded ${members.length} demo commitments. Selected member ${selected.id} at index ${idx}.`
+    );
+  }, [selectedDemoId]);
 
   const handleKeyFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -177,6 +216,7 @@ export default function SubmitPage() {
       address: REGISTRY_ADDRESS,
       abi: REGISTRY_ABI,
       functionName: "submitReport",
+      gas: SUBMIT_REPORT_GAS_LIMIT,
       args: [
         proof.pA as [bigint, bigint],
         proof.pB as [[bigint, bigint], [bigint, bigint]],
@@ -192,6 +232,18 @@ export default function SubmitPage() {
 
   const currentStep =
     txSuccess ? 3 : proof ? 2 : proofStatus === "idle" ? 0 : 1;
+
+  const txErrorMessage = (() => {
+    if (!txError) return "";
+    const msg = txError.message;
+    if (
+      msg.includes("exceeds transaction gas cap") ||
+      msg.includes("Transaction gas limit")
+    ) {
+      return "Tx gas exceeded local node cap. The app now submits with a safe gas limit; retry submit. If it still fails, the proof or inputs are invalid.";
+    }
+    return msg;
+  })();
 
   if (!isConnected) {
     return (
@@ -287,6 +339,44 @@ export default function SubmitPage() {
                     </p>
                   )}
                 </>
+              )}
+            </div>
+
+            <div className="mb-4 bg-white/[0.03] border border-white/10 p-4 space-y-3">
+              <p className="label">Load from Join Org (demo)</p>
+              <p className="text-[10px] font-mono text-slate-600">
+                Pull members saved in this browser. This auto-fills secret,
+                leaf index, and the organisation commitments list.
+              </p>
+
+              <div className="flex gap-2">
+                <select
+                  className="input font-mono text-xs py-2 flex-1"
+                  value={selectedDemoId}
+                  onChange={(e) => setSelectedDemoId(e.target.value)}
+                  disabled={!demoMembers.length || proofStatus === "generating"}
+                >
+                  {demoMembers.length === 0 && (
+                    <option value="">No demo members</option>
+                  )}
+                  {demoMembers.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.id}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  className="btn-ghost text-xs px-4 py-2 shrink-0"
+                  onClick={handleLoadDemoContext}
+                  disabled={proofStatus === "generating"}
+                >
+                  Load Demo Context
+                </button>
+              </div>
+
+              {demoLoadMessage && (
+                <p className="text-[10px] font-mono text-slate-400">{demoLoadMessage}</p>
               )}
             </div>
 
@@ -548,7 +638,7 @@ export default function SubmitPage() {
           )}
           {txError && (
             <p className="bg-red-900/30 border border-red-500/30 p-3 text-xs text-red-400">
-              {txError.message}
+              {txErrorMessage}
             </p>
           )}
         </section>

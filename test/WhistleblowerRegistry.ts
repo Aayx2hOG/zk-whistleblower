@@ -199,11 +199,64 @@ describe("WhistleblowerRegistry", function () {
                 )
             ).to.be.revertedWith("Invalid category");
         });
+
+        it("should allow 5 members to submit once each and reject replay", async function () {
+            this.timeout(180000);
+
+            const demoSecrets = [101n, 202n, 303n, 404n, 505n];
+            const demoCommitments = demoSecrets.map((s) => poseidonHash([s]));
+            const demoTree = buildMerkleTree(demoCommitments);
+            const demoExternalNullifier = 777n;
+
+            await registry.addRoot(demoTree.root);
+
+            for (let i = 0; i < demoSecrets.length; i++) {
+                const { proof, nullifierHash } = await generateProof(
+                    demoSecrets[i],
+                    demoTree,
+                    i,
+                    demoExternalNullifier
+                );
+                const { pA, pB, pC } = formatProofForContract(proof);
+
+                await registry.submitReport(
+                    pA,
+                    pB,
+                    pC,
+                    demoTree.root,
+                    nullifierHash,
+                    demoExternalNullifier,
+                    `QmDemoUser${i}`,
+                    i % 4
+                );
+            }
+
+            const { proof: firstProof, nullifierHash: firstNullifierHash } = await generateProof(
+                demoSecrets[0],
+                demoTree,
+                0,
+                demoExternalNullifier
+            );
+            const { pA, pB, pC } = formatProofForContract(firstProof);
+
+            await expect(
+                registry.submitReport(
+                    pA,
+                    pB,
+                    pC,
+                    demoTree.root,
+                    firstNullifierHash,
+                    demoExternalNullifier,
+                    "QmReplay",
+                    0
+                )
+            ).to.be.revertedWith("Nullifier already used");
+        });
     });
 
     describe("Report retrieval", function () {
         it("should return correct report count", async function () {
-            expect(await registry.getReportCount()).to.equal(2);
+            expect(await registry.getReportCount()).to.equal(7);
         });
 
         it("should revert for non-existent report", async function () {

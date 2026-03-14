@@ -16,6 +16,7 @@ import {
   downloadJSON,
   type MemberKeyFile,
 } from "@/lib/secretGen";
+import { getDemoMembers } from "@/lib/demoOrg";
 
 
 interface RootEvent {
@@ -63,6 +64,7 @@ export default function AdminPage() {
   const [generated, setGenerated] = useState<GeneratedMember[]>([]);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState("");
+  const [demoRootMsg, setDemoRootMsg] = useState("");
 
   // Build tree output state (shared with step 2)
   const [builtRoot, setBuiltRoot] = useState<string>("");
@@ -197,6 +199,27 @@ export default function AdminPage() {
       "manifest.json"
     );
 
+  const handleLoadRootFromDemoJoin = useCallback(async () => {
+    setDemoRootMsg("");
+    setGenError("");
+
+    try {
+      await initPoseidon();
+      const demoMembers = getDemoMembers();
+      if (!demoMembers.length) {
+        throw new Error("No demo members found. Add users on Join Org page first.");
+      }
+
+      const commitments = demoMembers.map((m) => BigInt(m.commitment));
+      const { root } = buildMerkleTree(commitments);
+      setBuiltRoot(root.toString());
+      setAddRootInput(root.toString());
+      setDemoRootMsg(`Loaded ${demoMembers.length} demo members and computed root.`);
+    } catch (e: unknown) {
+      setDemoRootMsg(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
   const handleAddRoot = () => {
     if (!addRootInput) return;
     addRoot({
@@ -257,6 +280,19 @@ export default function AdminPage() {
           packaged into a downloadable key file. The Merkle root is computed
           from commitments and auto-filled below.
         </p>
+
+        <div className="bg-white/[0.03] border border-white/10 p-4 space-y-3">
+          <p className="label">Use Join Org demo list</p>
+          <p className="text-[10px] font-mono text-slate-600">
+            For the demo flow, compute root directly from members created on the Join Org page.
+          </p>
+          <button className="btn-ghost text-xs px-4 py-2" onClick={handleLoadRootFromDemoJoin}>
+            Load Root From Join Org
+          </button>
+          {demoRootMsg && (
+            <p className="text-[10px] font-mono text-slate-400">{demoRootMsg}</p>
+          )}
+        </div>
 
         {/* Member rows */}
         <div className="space-y-2">

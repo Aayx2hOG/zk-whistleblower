@@ -71,13 +71,19 @@ pnpm run dev                    # http://localhost:3000
 ### Exit criteria (local Hardhat)
 
 1. Start Hardhat node: `npx hardhat node` (in root dir)
-2. Deploy contracts: `npx hardhat run scripts/deploy.ts`
+2. Deploy contracts: `npx hardhat run --network localhost scripts/deploy.ts`
 3. Copy the printed addresses into `frontend/.env.local`
 4. Run `pnpm run dev` in `frontend/`
 5. Connect MetaMask to `localhost:8545` (Chain ID 31337)
-6. **Admin page**: enter member secrets → Build Tree → Add Root
-7. **Submit page**: enter your secret + same secrets list + external nullifier → Generate Proof (~30 s) → Submit Report
-8. **Reviewer page**: see the submitted report listed with its category and CID
+6. **Join Org page**: create 3-5 demo users (secret + commitment generated locally)
+7. **Admin page**: load root from Join Org list (or generate manually) → Add Root
+8. **Submit page**: load demo context for each user → Generate Proof (~30 s) → Submit Report
+9. **Reviewer page**: see the submitted reports listed with category and CID
+
+### Demo exit criteria
+
+- 3-5 demo members can each submit once for the same `externalNullifier`
+- Reusing the same member for a second submission is rejected with `Nullifier already used`
 
 ### Tech stack (frontend)
 

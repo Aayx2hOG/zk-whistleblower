@@ -2,6 +2,15 @@ import Link from "next/link";
 
 const CARDS = [
   {
+    href: "/join",
+    icon: "group_add",
+    step: "00",
+    title: "Join Org",
+    description:
+      "Generate your secret and commitment locally, then join the shared demo membership list used for ZK proofs.",
+    action: "JOIN DEMO",
+  },
+  {
     href: "/admin",
     icon: "admin_panel_settings",
     step: "01",
@@ -78,7 +87,7 @@ export default function HomePage() {
       </section>
 
       {/* page links */}
-      <section className="grid gap-6 sm:grid-cols-3">
+      <section className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {CARDS.map(({ href, icon, step, title, description, action }) => (
           <Link
             key={href}
