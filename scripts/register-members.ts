@@ -42,35 +42,30 @@ function buildMerkleTree(leaves: bigint[]) {
     return { root: layers[TREE_DEPTH][0], layers };
 }
 
-// AES-256-GCM encryption using password-derived key
 function encryptSecret(secret: bigint, password: string) {
     const salt = randomBytes(16);
     const iv = randomBytes(12);
     const key = pbkdf2Sync(password, salt, 100000, 32, "sha256");
-
     const cipher = createCipheriv("aes-256-gcm", key, iv);
-    const secretBytes = Buffer.from(secret.toString());
-    const ciphertext = Buffer.concat([cipher.update(secretBytes), cipher.final()]);
-    const tag = cipher.getAuthTag();
-
+    const ciphertext = Buffer.concat([
+        cipher.update(Buffer.from(secret.toString())),
+        cipher.final(),
+    ]);
     return {
         iv: iv.toString("hex"),
         salt: salt.toString("hex"),
         ciphertext: ciphertext.toString("hex"),
-        tag: tag.toString("hex"),
+        tag: cipher.getAuthTag().toString("hex"),
     };
 }
 
-// generates a random 31-byte secret (fits inside BN128 field)
 function generateSecret(): bigint {
-    const bytes = randomBytes(31);
-    return BigInt("0x" + bytes.toString("hex"));
+    return BigInt("0x" + randomBytes(31).toString("hex"));
 }
 
 async function main() {
     await initPoseidon();
 
-    // define your organization members here
     const members = [
         { id: "alice", password: "alice-password-123" },
         { id: "bob", password: "bob-password-456" },
@@ -78,7 +73,6 @@ async function main() {
     ];
 
     console.log(`Registering ${members.length} members...\n`);
-
     mkdirSync(KEYS_DIR, { recursive: true });
 
     const commitments: bigint[] = [];
@@ -88,53 +82,41 @@ async function main() {
         const commitment = poseidonHash([secret]);
         commitments.push(commitment);
 
-        const encrypted = encryptSecret(secret, member.password);
+        writeFileSync(
+            resolve(KEYS_DIR, `${member.id}.json`),
+            JSON.stringify(
+                { memberId: member.id, commitment: commitment.toString(), encrypted: encryptSecret(secret, member.password) },
+                null,
+                2
+            )
+        );
 
-        const keyFile = {
-            memberId: member.id,
-            commitment: commitment.toString(),
-            encrypted,
-        };
-
-        const filePath = resolve(KEYS_DIR, `${member.id}.json`);
-        writeFileSync(filePath, JSON.stringify(keyFile, null, 2));
-
-        console.log(`  ${member.id}:`);
-        console.log(`    commitment: ${commitment.toString().slice(0, 20)}...`);
-        console.log(`    key file:   keys/${member.id}.json`);
+        console.log(`  ${member.id}: ${commitment.toString().slice(0, 20)}...  →  keys/${member.id}.json`);
     }
 
-    // build Merkle tree
-    console.log("\nBuilding Merkle tree...");
     const tree = buildMerkleTree(commitments);
-    console.log(`Root: ${tree.root}`);
+    console.log(`\nMerkle root: ${tree.root}`);
 
-    // register root on-chain
     const registryAddress = process.env.REGISTRY_ADDRESS;
     if (registryAddress) {
         const registry = await ethers.getContractAt("WhistleblowerRegistry", registryAddress);
-        console.log("\nRegistering root on-chain...");
         const tx = await registry.addRoot(tree.root);
         await tx.wait();
-        console.log("Root registered!");
+        console.log("Root registered on-chain.");
     } else {
-        console.log("\nNo REGISTRY_ADDRESS set — skipping on-chain registration.");
-        console.log("Set REGISTRY_ADDRESS env var to auto-register the root.");
+        console.log("REGISTRY_ADDRESS not set — skipping on-chain registration.");
     }
 
-    // save a commitments manifest for reference
-    const manifest = {
-        commitments: commitments.map((c) => c.toString()),
-        root: tree.root.toString(),
-        memberCount: members.length,
-        treeDepth: TREE_DEPTH,
-    };
-    writeFileSync(resolve(KEYS_DIR, "manifest.json"), JSON.stringify(manifest, null, 2));
-    console.log("\nManifest saved to keys/manifest.json");
+    writeFileSync(
+        resolve(KEYS_DIR, "manifest.json"),
+        JSON.stringify(
+            { commitments: commitments.map((c) => c.toString()), root: tree.root.toString(), memberCount: members.length, treeDepth: TREE_DEPTH },
+            null,
+            2
+        )
+    );
 
-    console.log("\n=== Registration complete ===");
-    console.log(`Give each member their key file (keys/<id>.json).`);
-    console.log(`They decrypt it with their password to get their secret.`);
+    console.log("Manifest saved to keys/manifest.json");
 }
 
 main().catch(console.error);

@@ -81,6 +81,10 @@ export async function generateProof(
     return { proof, publicSignals, nullifierHash };
 }
 
+export async function generateProofRaw(input: Record<string, string | string[]>) {
+    return snarkjs.groth16.fullProve(input, WASM_PATH, ZKEY_PATH);
+}
+
 export function formatProofForContract(proof: any) {
     return {
         pA: [proof.pi_a[0], proof.pi_a[1]] as [string, string],

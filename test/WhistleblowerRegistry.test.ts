@@ -4,7 +4,9 @@ import {
     initPoseidon,
     poseidonHash,
     buildMerkleTree,
+    getMerkleProof,
     generateProof,
+    generateProofRaw,
     formatProofForContract,
 } from "./fixtures/setup.js";
 
@@ -212,43 +214,26 @@ describe("WhistleblowerRegistry", function () {
 
             for (let i = 0; i < demoSecrets.length; i++) {
                 const { proof, nullifierHash } = await generateProof(
-                    demoSecrets[i],
-                    demoTree,
-                    i,
-                    demoExternalNullifier
+                    demoSecrets[i], demoTree, i, demoExternalNullifier
                 );
                 const { pA, pB, pC } = formatProofForContract(proof);
-
                 await registry.submitReport(
-                    pA,
-                    pB,
-                    pC,
-                    demoTree.root,
-                    nullifierHash,
-                    demoExternalNullifier,
-                    `QmDemoUser${i}`,
-                    i % 4
+                    pA, pB, pC,
+                    demoTree.root, nullifierHash, demoExternalNullifier,
+                    `QmDemoUser${i}`, i % 4
                 );
             }
 
-            const { proof: firstProof, nullifierHash: firstNullifierHash } = await generateProof(
-                demoSecrets[0],
-                demoTree,
-                0,
-                demoExternalNullifier
+            const { proof: replayProof, nullifierHash: replayNullifier } = await generateProof(
+                demoSecrets[0], demoTree, 0, demoExternalNullifier
             );
-            const { pA, pB, pC } = formatProofForContract(firstProof);
+            const { pA, pB, pC } = formatProofForContract(replayProof);
 
             await expect(
                 registry.submitReport(
-                    pA,
-                    pB,
-                    pC,
-                    demoTree.root,
-                    firstNullifierHash,
-                    demoExternalNullifier,
-                    "QmReplay",
-                    0
+                    pA, pB, pC,
+                    demoTree.root, replayNullifier, demoExternalNullifier,
+                    "QmReplay", 0
                 )
             ).to.be.revertedWith("Nullifier already used");
         });
@@ -263,6 +248,93 @@ describe("WhistleblowerRegistry", function () {
             await expect(registry.getReport(999)).to.be.revertedWith(
                 "Report does not exist"
             );
+        });
+    });
+
+    describe("Circuit constraints", function () {
+        it("should generate a valid witness for a legitimate member", async function () {
+            this.timeout(60000);
+            const { pathElements, pathIndices } = getMerkleProof(tree.layers, 0);
+            const nullifierHash = poseidonHash([secrets[0], externalNullifier]);
+            await generateProofRaw({
+                root: tree.root.toString(),
+                nullifierHash: nullifierHash.toString(),
+                externalNullifier: externalNullifier.toString(),
+                secret: secrets[0].toString(),
+                pathElements: pathElements.map((x) => x.toString()),
+                pathIndices: pathIndices.map((x) => x.toString()),
+            });
+        });
+
+        it("should fail witness generation for a non-member secret", async function () {
+            this.timeout(60000);
+            const outsiderSecret = 999999999n;
+            const { pathElements, pathIndices } = getMerkleProof(tree.layers, 0);
+            const nullifierHash = poseidonHash([outsiderSecret, externalNullifier]);
+
+            await expect(
+                generateProofRaw({
+                    root: tree.root.toString(),
+                    nullifierHash: nullifierHash.toString(),
+                    externalNullifier: externalNullifier.toString(),
+                    secret: outsiderSecret.toString(),
+                    pathElements: pathElements.map((x) => x.toString()),
+                    pathIndices: pathIndices.map((x) => x.toString()),
+                })
+            ).to.be.rejected;
+        });
+
+        it("should fail witness generation for a tampered Merkle path", async function () {
+            this.timeout(60000);
+            const { pathElements, pathIndices } = getMerkleProof(tree.layers, 0);
+            const tamperedPath = [...pathElements];
+            tamperedPath[0] = 9999999999999n;
+            const nullifierHash = poseidonHash([secrets[0], externalNullifier]);
+
+            await expect(
+                generateProofRaw({
+                    root: tree.root.toString(),
+                    nullifierHash: nullifierHash.toString(),
+                    externalNullifier: externalNullifier.toString(),
+                    secret: secrets[0].toString(),
+                    pathElements: tamperedPath.map((x) => x.toString()),
+                    pathIndices: pathIndices.map((x) => x.toString()),
+                })
+            ).to.be.rejected;
+        });
+
+        it("should fail witness generation for a wrong leaf index", async function () {
+            this.timeout(60000);
+            const { pathElements, pathIndices } = getMerkleProof(tree.layers, 1);
+            const nullifierHash = poseidonHash([secrets[0], externalNullifier]);
+
+            await expect(
+                generateProofRaw({
+                    root: tree.root.toString(),
+                    nullifierHash: nullifierHash.toString(),
+                    externalNullifier: externalNullifier.toString(),
+                    secret: secrets[0].toString(),
+                    pathElements: pathElements.map((x) => x.toString()),
+                    pathIndices: pathIndices.map((x) => x.toString()),
+                })
+            ).to.be.rejected;
+        });
+
+        it("should fail witness generation for a mismatched nullifier hash", async function () {
+            this.timeout(60000);
+            const { pathElements, pathIndices } = getMerkleProof(tree.layers, 0);
+            const wrongNullifier = poseidonHash([secrets[1], externalNullifier]);
+
+            await expect(
+                generateProofRaw({
+                    root: tree.root.toString(),
+                    nullifierHash: wrongNullifier.toString(),
+                    externalNullifier: externalNullifier.toString(),
+                    secret: secrets[0].toString(),
+                    pathElements: pathElements.map((x) => x.toString()),
+                    pathIndices: pathIndices.map((x) => x.toString()),
+                })
+            ).to.be.rejected;
         });
     });
 });
