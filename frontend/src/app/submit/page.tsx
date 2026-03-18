@@ -14,9 +14,8 @@ import { decryptSecret, type MemberKeyFile } from "@/lib/secretGen";
 import { encryptReport } from "@/lib/encryption";
 import { uploadEncryptedReport } from "@/lib/ipfs";
 import { getDemoMembers, type DemoMember } from "@/lib/demoOrg";
+import { getCurrentEpoch, formatEpochRange } from "@/lib/epoch";
 
-// Hardhat localhost rejects tx gas above 16,777,216 (0x1000000).
-// Keep an explicit cap below that so wallet fallback gas values do not fail early.
 const SUBMIT_REPORT_GAS_LIMIT = 12_000_000n;
 
 function Step({
@@ -98,6 +97,10 @@ export default function SubmitPage() {
       setSelectedDemoId(members[0].id);
     }
   }, [selectedDemoId]);
+
+  useEffect(() => {
+    setExternalNullifier(getCurrentEpoch().toString());
+  }, []);
 
   const handleLoadDemoContext = useCallback(() => {
     const members = getDemoMembers();
@@ -212,6 +215,8 @@ export default function SubmitPage() {
 
   const handleSubmit = () => {
     if (!proof) return;
+    const encoded = new TextEncoder().encode(encryptedCID);
+    const cidHex = `0x${Array.from(encoded).map(b => b.toString(16).padStart(2, '0')).join('')}`;
     writeContract({
       address: REGISTRY_ADDRESS,
       abi: REGISTRY_ABI,
@@ -224,7 +229,7 @@ export default function SubmitPage() {
         proof.root,
         proof.nullifierHash,
         proof.externalNullifier,
-        encryptedCID,
+        cidHex as `0x${string}`,
         category,
       ],
     });
@@ -410,19 +415,19 @@ export default function SubmitPage() {
         </div>
 
         <div>
-          <label className="label">External nullifier</label>
+          <label className="label">Epoch (external nullifier)</label>
           <input
             className="input font-mono"
-            placeholder="42"
+            placeholder="epoch"
             value={externalNullifier}
             onChange={(e) => setExternalNullifier(e.target.value)}
             disabled={proofStatus === "generating"}
           />
           <p className="mt-1 text-[10px] font-mono text-slate-600">
-            Campaign / round ID. Prevents the same person submitting twice per
-            round (must match what admin chose).
+            Current epoch: {formatEpochRange(getCurrentEpoch())} — allows one submission per 24h period
           </p>
         </div>
+
 
         <div>
           <label className="label">All organisation commitments (from manifest.json)</label>
@@ -583,15 +588,15 @@ export default function SubmitPage() {
           <div className="space-y-2 font-mono text-xs text-slate-400">
             <p>
               <span className="text-slate-500">root:</span>{" "}
-              {proof.root.toString()}
+              {proof?.root.toString()}
             </p>
             <p>
               <span className="text-slate-500">nullifierHash:</span>{" "}
-              {proof.nullifierHash.toString()}
+              {proof?.nullifierHash.toString()}
             </p>
             <p>
               <span className="text-slate-500">externalNullifier:</span>{" "}
-              {proof.externalNullifier.toString()}
+              {proof?.externalNullifier.toString()}
             </p>
           </div>
 

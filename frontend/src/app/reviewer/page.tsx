@@ -14,7 +14,7 @@ import { fetchFromIPFS } from "@/lib/ipfs";
 interface Report {
   id: bigint;
   nullifierHash: bigint;
-  encryptedCID: string;
+  encryptedCID: string; // converted from bytes
   timestamp: bigint;
   category: number;
   merkleRoot: bigint;
@@ -189,15 +189,25 @@ export default function ReviewerPage() {
           .map((r: unknown, i) => {
             const row = r as {
               nullifierHash: bigint;
-              encryptedCID: string;
+              encryptedCID: Uint8Array | string;
               timestamp: bigint;
               category: number;
               merkleRoot: bigint;
             };
+
+            let cidString = "";
+            if (typeof row.encryptedCID === "string") {
+              cidString = row.encryptedCID;
+            } else if (row.encryptedCID instanceof Uint8Array) {
+              cidString = new TextDecoder().decode(row.encryptedCID);
+            } else if (typeof row.encryptedCID === "object" && row.encryptedCID !== null) {
+              cidString = String(row.encryptedCID);
+            }
+
             return {
               id: BigInt(i),
               nullifierHash: row.nullifierHash,
-              encryptedCID: row.encryptedCID,
+              encryptedCID: cidString,
               timestamp: row.timestamp,
               category: Number(row.category),
               merkleRoot: row.merkleRoot,
@@ -212,7 +222,7 @@ export default function ReviewerPage() {
     })();
   }, [reportCount, countLoading, countError, publicClient]);
 
-//real time report fetch
+  //real time report fetch
   useWatchContractEvent({
     address: REGISTRY_ADDRESS,
     abi: REGISTRY_ABI,
@@ -224,18 +234,27 @@ export default function ReviewerPage() {
         const args = log.args as {
           reportId: bigint;
           nullifierHash: bigint;
-          encryptedCID: string;
+          encryptedCID: Uint8Array | string;
           category: number;
           timestamp: bigint;
         };
-        // will be updated on next full fetch
+
+        let cidString = "";
+        if (typeof args.encryptedCID === "string") {
+          cidString = args.encryptedCID;
+        } else if (args.encryptedCID instanceof Uint8Array) {
+          cidString = new TextDecoder().decode(args.encryptedCID);
+        } else {
+          cidString = String(args.encryptedCID);
+        }
+
         const newReport: Report = {
           id: args.reportId,
           nullifierHash: args.nullifierHash,
-          encryptedCID: args.encryptedCID,
+          encryptedCID: cidString,
           timestamp: args.timestamp,
           category: Number(args.category),
-          merkleRoot: 0n, 
+          merkleRoot: 0n,
         };
         setReports((prev) => {
           if (prev.some((r) => r.id === newReport.id)) return prev;
