@@ -5,6 +5,7 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
   useAccount,
+  usePublicClient,
 } from "wagmi";
 import { REGISTRY_ABI, REGISTRY_ADDRESS, CATEGORIES } from "@/lib/contracts";
 import { initPoseidon } from "@/lib/poseidon";
@@ -47,7 +48,8 @@ function Step({
 }
 
 export default function SubmitPage() {
-  const { isConnected } = useAccount();
+  const { isConnected, address } = useAccount();
+  const publicClient = usePublicClient();
 
   const [keyFileJson, setKeyFileJson] = useState("");
   const [keyFilePassword, setKeyFilePassword] = useState("");
@@ -77,6 +79,7 @@ export default function SubmitPage() {
   const [proofLog, setProofLog] = useState<string[]>([]);
   const [proof, setProof] = useState<FormattedProof | null>(null);
   const [proofError, setProofError] = useState("");
+  const [submitError, setSubmitError] = useState("");
 
   const {
     writeContract,
@@ -213,26 +216,103 @@ export default function SubmitPage() {
     }
   }, [secret, leafIndex, orgSecrets, externalNullifier]);
 
-  const handleSubmit = () => {
+  const mapContractError = (msg: string): string => {
+    if (msg.includes("UnknownMerkleRoot")) {
+      return "Merkle root is not active on-chain. Add this root from Admin page, then retry.";
+    }
+    if (msg.includes("NullifierAlreadyUsed")) {
+      return "This identity already submitted for the selected epoch. Use a new epoch or different member.";
+    }
+    if (msg.includes("InvalidCategory")) {
+      return "Category must be one of 0..3.";
+    }
+    if (msg.includes("InvalidZKProof")) {
+      return "Proof verification failed. Ensure secret, leaf index, commitments list, and epoch exactly match the registered root.";
+    }
+    if (
+      msg.includes("exceeds transaction gas cap") ||
+      msg.includes("Transaction gas limit")
+    ) {
+      return "Tx gas exceeded local node cap. Retry submit. If it still fails, the proof or inputs are invalid.";
+    }
+    if (msg.includes("Internal error")) {
+      return "RPC returned an internal error while simulating or sending the tx. Most common cause is an invalid proof/public inputs mismatch. Re-generate proof after reloading the exact root + epoch context.";
+    }
+    return msg;
+  };
+
+  const handleSubmit = async () => {
     if (!proof) return;
+    setSubmitError("");
+    if (!publicClient) {
+      setSubmitError("Public client not ready. Refresh and try again.");
+      return;
+    }
+    if (!address) {
+      setSubmitError("Connect wallet before submitting.");
+      return;
+    }
+    if (!encryptedCID.trim()) {
+      setSubmitError("Upload encrypted report first to get CID.");
+      return;
+    }
+
     const encoded = new TextEncoder().encode(encryptedCID);
     const cidHex = `0x${Array.from(encoded).map(b => b.toString(16).padStart(2, '0')).join('')}`;
-    writeContract({
-      address: REGISTRY_ADDRESS,
-      abi: REGISTRY_ABI,
-      functionName: "submitReport",
-      gas: SUBMIT_REPORT_GAS_LIMIT,
-      args: [
-        proof.pA as [bigint, bigint],
-        proof.pB as [[bigint, bigint], [bigint, bigint]],
-        proof.pC as [bigint, bigint],
-        proof.root,
-        proof.nullifierHash,
-        proof.externalNullifier,
-        cidHex as `0x${string}`,
-        category,
-      ],
-    });
+    const submitArgs = [
+      proof.pA as [bigint, bigint],
+      proof.pB as [[bigint, bigint], [bigint, bigint]],
+      proof.pC as [bigint, bigint],
+      proof.root,
+      proof.nullifierHash,
+      proof.externalNullifier,
+      cidHex as `0x${string}`,
+      category,
+    ] as const;
+
+    try {
+      const rootActive = await publicClient.readContract({
+        address: REGISTRY_ADDRESS,
+        abi: REGISTRY_ABI,
+        functionName: "roots",
+        args: [proof.root],
+      });
+      if (!rootActive) {
+        setSubmitError(mapContractError("UnknownMerkleRoot"));
+        return;
+      }
+
+      const nullifierUsed = await publicClient.readContract({
+        address: REGISTRY_ADDRESS,
+        abi: REGISTRY_ABI,
+        functionName: "usedNullifiers",
+        args: [proof.nullifierHash],
+      });
+      if (nullifierUsed) {
+        setSubmitError(mapContractError("NullifierAlreadyUsed"));
+        return;
+      }
+
+      await publicClient.simulateContract({
+        account: address,
+        address: REGISTRY_ADDRESS,
+        abi: REGISTRY_ABI,
+        functionName: "submitReport",
+        args: submitArgs,
+        gas: SUBMIT_REPORT_GAS_LIMIT,
+      });
+
+      writeContract({
+        address: REGISTRY_ADDRESS,
+        abi: REGISTRY_ABI,
+        functionName: "submitReport",
+        gas: SUBMIT_REPORT_GAS_LIMIT,
+        args: submitArgs,
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setSubmitError(mapContractError(msg));
+    }
   };
 
   const currentStep =
@@ -240,14 +320,7 @@ export default function SubmitPage() {
 
   const txErrorMessage = (() => {
     if (!txError) return "";
-    const msg = txError.message;
-    if (
-      msg.includes("exceeds transaction gas cap") ||
-      msg.includes("Transaction gas limit")
-    ) {
-      return "Tx gas exceeded local node cap. The app now submits with a safe gas limit; retry submit. If it still fails, the proof or inputs are invalid.";
-    }
-    return msg;
+    return mapContractError(txError.message);
   })();
 
   if (!isConnected) {
@@ -639,6 +712,11 @@ export default function SubmitPage() {
             <p className="bg-green-900/30 border border-green-500/30 p-3 text-xs text-green-400">
               Report submitted successfully! The contract verified your ZK
               proof and stored the report.
+            </p>
+          )}
+          {submitError && (
+            <p className="bg-red-900/30 border border-red-500/30 p-3 text-xs text-red-400">
+              {submitError}
             </p>
           )}
           {txError && (

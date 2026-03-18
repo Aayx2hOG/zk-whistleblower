@@ -19,6 +19,41 @@ export const REGISTRY_ABI = [
     name: "OwnableUnauthorizedAccount",
     inputs: [{ name: "account", type: "address" }],
   },
+  {
+    type: "error",
+    name: "UnknownMerkleRoot",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "NullifierAlreadyUsed",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "InvalidCategory",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "InvalidZKProof",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "RootAlreadyExists",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "RootDoesNotExist",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "ReportDoesNotExist",
+    inputs: [],
+  },
   //Events
   {
     type: "event",
@@ -36,7 +71,7 @@ export const REGISTRY_ABI = [
     inputs: [
       { indexed: true, name: "reportId", type: "uint256" },
       { indexed: true, name: "nullifierHash", type: "uint256" },
-      { indexed: false, name: "encryptedCID", type: "string" },
+      { indexed: false, name: "encryptedCID", type: "bytes" },
       { indexed: false, name: "category", type: "uint8" },
       { indexed: false, name: "timestamp", type: "uint256" },
     ],

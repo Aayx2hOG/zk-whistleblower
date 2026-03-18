@@ -14,10 +14,31 @@ import { fetchFromIPFS } from "@/lib/ipfs";
 interface Report {
   id: bigint;
   nullifierHash: bigint;
-  encryptedCID: string; // converted from bytes
+  encryptedCID: string; // normalized to plain CID text
   timestamp: bigint;
   category: number;
   merkleRoot: bigint;
+}
+
+function decodeCid(value: Uint8Array | string): string {
+  if (value instanceof Uint8Array) {
+    return new TextDecoder().decode(value).replace(/\u0000+$/g, "");
+  }
+
+  const raw = value.trim();
+  // Some providers return bytes as 0x-prefixed hex strings; decode to UTF-8 CID.
+  if (/^0x[0-9a-fA-F]*$/.test(raw) && raw.length >= 4) {
+    try {
+      const hex = raw.slice(2);
+      const bytes = new Uint8Array(hex.match(/.{1,2}/g)?.map((b) => parseInt(b, 16)) ?? []);
+      const decoded = new TextDecoder().decode(bytes).replace(/\u0000+$/g, "").trim();
+      return decoded || raw;
+    } catch {
+      return raw;
+    }
+  }
+
+  return raw;
 }
 
 //badge
@@ -195,14 +216,7 @@ export default function ReviewerPage() {
               merkleRoot: bigint;
             };
 
-            let cidString = "";
-            if (typeof row.encryptedCID === "string") {
-              cidString = row.encryptedCID;
-            } else if (row.encryptedCID instanceof Uint8Array) {
-              cidString = new TextDecoder().decode(row.encryptedCID);
-            } else if (typeof row.encryptedCID === "object" && row.encryptedCID !== null) {
-              cidString = String(row.encryptedCID);
-            }
+            const cidString = decodeCid(row.encryptedCID);
 
             return {
               id: BigInt(i),
@@ -239,14 +253,7 @@ export default function ReviewerPage() {
           timestamp: bigint;
         };
 
-        let cidString = "";
-        if (typeof args.encryptedCID === "string") {
-          cidString = args.encryptedCID;
-        } else if (args.encryptedCID instanceof Uint8Array) {
-          cidString = new TextDecoder().decode(args.encryptedCID);
-        } else {
-          cidString = String(args.encryptedCID);
-        }
+        const cidString = decodeCid(args.encryptedCID);
 
         const newReport: Report = {
           id: args.reportId,

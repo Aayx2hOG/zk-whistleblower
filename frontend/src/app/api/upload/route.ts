@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
+function normalizeJwt(value: string): string {
+  const trimmed = value.trim().replace(/^['\"]|['\"]$/g, "");
+  return trimmed.replace(/^Bearer\s+/i, "").trim();
+}
+
 /**
  * POST /api/upload
  * Body: JSON (EncryptedBlob — already encrypted client-side)
@@ -10,11 +15,28 @@ import { NextRequest, NextResponse } from "next/server";
  * leaves the submitter's browser.
  */
 export async function POST(req: NextRequest) {
-  const jwt = process.env.PINATA_JWT;
-  if (!jwt) {
+  const rawJwt =
+    process.env.PINATA_JWT ??
+    process.env.PINATA_JWT_SERVER ??
+    process.env.NEXT_PUBLIC_PINATA_JWT;
+  if (!rawJwt) {
     return NextResponse.json(
-      { error: "Pinata JWT not configured on server" },
+      {
+        error:
+          "Pinata JWT not configured. Set PINATA_JWT in frontend/.env.local and restart `pnpm dev`.",
+      },
       { status: 500 }
+    );
+  }
+
+  const jwt = normalizeJwt(rawJwt);
+  if (jwt.split(".").length !== 3) {
+    return NextResponse.json(
+      {
+        error:
+          "Pinata JWT is malformed. Paste only the raw JWT (three dot-separated parts), not API key/secret or extra text.",
+      },
+      { status: 401 }
     );
   }
 
