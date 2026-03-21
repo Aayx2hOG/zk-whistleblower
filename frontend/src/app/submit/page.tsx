@@ -2,12 +2,10 @@
 
 import { useState, useCallback, useEffect } from "react";
 import {
-  useWriteContract,
-  useWaitForTransactionReceipt,
-  useAccount,
   usePublicClient,
 } from "wagmi";
 import { REGISTRY_ABI, REGISTRY_ADDRESS, CATEGORIES } from "@/lib/contracts";
+import { relaySubmitReport } from "@/lib/relayer";
 import { initPoseidon } from "@/lib/poseidon";
 import { buildMerkleTree } from "@/lib/merkle";
 import { generateZKProof, type FormattedProof } from "@/lib/zkProof";
@@ -48,7 +46,6 @@ function Step({
 }
 
 export default function SubmitPage() {
-  const { isConnected, address } = useAccount();
   const publicClient = usePublicClient();
 
   const [keyFileJson, setKeyFileJson] = useState("");
@@ -80,15 +77,9 @@ export default function SubmitPage() {
   const [proof, setProof] = useState<FormattedProof | null>(null);
   const [proofError, setProofError] = useState("");
   const [submitError, setSubmitError] = useState("");
-
-  const {
-    writeContract,
-    data: txHash,
-    isPending: txPending,
-    error: txError,
-  } = useWriteContract();
-  const { isLoading: txLoading, isSuccess: txSuccess } =
-    useWaitForTransactionReceipt({ hash: txHash });
+  const [submitPending, setSubmitPending] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [submittedTxHash, setSubmittedTxHash] = useState<`0x${string}` | "">("");
 
   const log = (msg: string) =>
     setProofLog((l) => [...l, `${new Date().toLocaleTimeString()} ${msg}`]);
@@ -244,12 +235,9 @@ export default function SubmitPage() {
   const handleSubmit = async () => {
     if (!proof) return;
     setSubmitError("");
+    setSubmitSuccess(false);
     if (!publicClient) {
       setSubmitError("Public client not ready. Refresh and try again.");
-      return;
-    }
-    if (!address) {
-      setSubmitError("Connect wallet before submitting.");
       return;
     }
     if (!encryptedCID.trim()) {
@@ -257,18 +245,9 @@ export default function SubmitPage() {
       return;
     }
 
+    setSubmitPending(true);
     const encoded = new TextEncoder().encode(encryptedCID);
     const cidHex = `0x${Array.from(encoded).map(b => b.toString(16).padStart(2, '0')).join('')}`;
-    const submitArgs = [
-      proof.pA as [bigint, bigint],
-      proof.pB as [[bigint, bigint], [bigint, bigint]],
-      proof.pC as [bigint, bigint],
-      proof.root,
-      proof.nullifierHash,
-      proof.externalNullifier,
-      cidHex as `0x${string}`,
-      category,
-    ] as const;
 
     try {
       const rootActive = await publicClient.readContract({
@@ -293,44 +272,33 @@ export default function SubmitPage() {
         return;
       }
 
-      await publicClient.simulateContract({
-        account: address,
-        address: REGISTRY_ADDRESS,
-        abi: REGISTRY_ABI,
-        functionName: "submitReport",
-        args: submitArgs,
-        gas: SUBMIT_REPORT_GAS_LIMIT,
+      const { txHash } = await relaySubmitReport({
+        pA: [proof.pA[0].toString(), proof.pA[1].toString()],
+        pB: [
+          [proof.pB[0][0].toString(), proof.pB[0][1].toString()],
+          [proof.pB[1][0].toString(), proof.pB[1][1].toString()],
+        ],
+        pC: [proof.pC[0].toString(), proof.pC[1].toString()],
+        root: proof.root.toString(),
+        nullifierHash: proof.nullifierHash.toString(),
+        externalNullifier: proof.externalNullifier.toString(),
+        encryptedCIDHex: cidHex as `0x${string}`,
+        category,
       });
 
-      writeContract({
-        address: REGISTRY_ADDRESS,
-        abi: REGISTRY_ABI,
-        functionName: "submitReport",
-        gas: SUBMIT_REPORT_GAS_LIMIT,
-        args: submitArgs,
-      });
+      setSubmittedTxHash(txHash);
+      await publicClient.waitForTransactionReceipt({ hash: txHash });
+      setSubmitSuccess(true);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setSubmitError(mapContractError(msg));
+    } finally {
+      setSubmitPending(false);
     }
   };
 
   const currentStep =
-    txSuccess ? 3 : proof ? 2 : proofStatus === "idle" ? 0 : 1;
-
-  const txErrorMessage = (() => {
-    if (!txError) return "";
-    return mapContractError(txError.message);
-  })();
-
-  if (!isConnected) {
-    return (
-      <div className="card text-center text-slate-400">
-        <span className="material-symbols-outlined text-4xl text-white/20 mb-4 block">vpn_key</span>
-        Connect your wallet to submit a report.
-      </div>
-    );
-  }
+    submitSuccess ? 3 : proof ? 2 : proofStatus === "idle" ? 0 : 1;
 
   return (
     <div className="space-y-12">
@@ -677,12 +645,12 @@ export default function SubmitPage() {
             <button
               className="btn-cta"
               onClick={handleSubmit}
-              disabled={txPending || txLoading || txSuccess || !encryptedCID}
+              disabled={submitPending || submitSuccess || !encryptedCID}
             >
               <span>
-                {txPending || txLoading
+                {submitPending
                   ? "SUBMITTING…"
-                  : txSuccess
+                  : submitSuccess
                     ? "SUBMITTED ✓"
                     : "SUBMIT TO BLOCKCHAIN"}
               </span>
@@ -693,22 +661,22 @@ export default function SubmitPage() {
             </p>
           </div>
 
-          {txHash && (
+          {submittedTxHash && (
             <div className="bg-white p-4 border-l-4 border-green-500 flex items-center gap-4">
               <div className="size-10 bg-black flex items-center justify-center">
                 <span className="material-symbols-outlined text-white text-sm">check_circle</span>
               </div>
               <div>
                 <p className="text-black font-black text-xs uppercase tracking-tight leading-none mb-1">
-                  Transaction {txSuccess ? "Mined" : "Pending"}
+                  Transaction {submitSuccess ? "Mined" : "Pending"}
                 </p>
                 <p className="text-slate-500 font-mono text-[10px] break-all">
-                  HASH: {txHash}
+                  HASH: {submittedTxHash}
                 </p>
               </div>
             </div>
           )}
-          {txSuccess && (
+          {submitSuccess && (
             <p className="bg-green-900/30 border border-green-500/30 p-3 text-xs text-green-400">
               Report submitted successfully! The contract verified your ZK
               proof and stored the report.
@@ -717,11 +685,6 @@ export default function SubmitPage() {
           {submitError && (
             <p className="bg-red-900/30 border border-red-500/30 p-3 text-xs text-red-400">
               {submitError}
-            </p>
-          )}
-          {txError && (
-            <p className="bg-red-900/30 border border-red-500/30 p-3 text-xs text-red-400">
-              {txErrorMessage}
             </p>
           )}
         </section>

@@ -15,8 +15,8 @@ body {
 
 /* Background grid decoration */
 .bg-grid {
-  background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
   background-size: 80px 80px;
 }
 
@@ -27,8 +27,7 @@ body {
 
 
 .input {
-  @apply w-full border border-white/20 bg-transparent p-4 font-mono text-white text-sm
-    placeholder-slate-500 focus:border-white focus:outline-none focus:ring-0;
+  @apply w-full border border-white/20 bg-transparent p-4 font-mono text-white text-sm placeholder-slate-500 focus:border-white focus:outline-none focus:ring-0;
 }
 
 /* Shared label style */
@@ -38,29 +37,22 @@ body {
 
 /* Primary button */
 .btn-primary {
-  @apply w-full py-4 border border-white text-white hover:bg-white hover:text-black
-    transition-all font-black uppercase tracking-widest text-sm
-    disabled:cursor-not-allowed disabled:opacity-40;
+  @apply w-full py-4 border border-white text-white hover:bg-white hover:text-black transition-all font-black uppercase tracking-widest text-sm disabled:cursor-not-allowed disabled:opacity-40;
 }
 
 /* Danger button */
 .btn-danger {
-  @apply w-full py-4 border border-red-500 text-red-500 hover:bg-red-500 hover:text-black
-    transition-all font-black uppercase tracking-widest text-sm
-    disabled:cursor-not-allowed disabled:opacity-40;
+  @apply w-full py-4 border border-red-500 text-red-500 hover:bg-red-500 hover:text-black transition-all font-black uppercase tracking-widest text-sm disabled:cursor-not-allowed disabled:opacity-40;
 }
 
 /* Ghost/secondary button */
 .btn-ghost {
-  @apply border border-white/20 px-4 py-3 text-sm font-bold
-    text-slate-300 hover:border-white hover:text-white disabled:opacity-40
-    transition-colors uppercase tracking-wider;
+  @apply border border-white/20 px-4 py-3 text-sm font-bold text-slate-300 hover:border-white hover:text-white disabled:opacity-40 transition-colors uppercase tracking-wider;
 }
 
 /* Submit CTA button */
 .btn-cta {
-  @apply w-full bg-white text-black py-6 text-xl font-black uppercase tracking-tighter
-    hover:bg-slate-200 transition-colors flex items-center justify-center gap-3;
+  @apply w-full bg-white text-black py-6 text-xl font-black uppercase tracking-tighter hover:bg-slate-200 transition-colors flex items-center justify-center gap-3;
 }
 
 /* Step label style */

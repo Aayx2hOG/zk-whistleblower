@@ -2,12 +2,12 @@
 
 import { useState, useCallback, useRef } from "react";
 import {
-  useWriteContract,
   useWaitForTransactionReceipt,
   useWatchContractEvent,
-  useAccount,
+  usePublicClient,
 } from "wagmi";
 import { REGISTRY_ABI, REGISTRY_ADDRESS } from "@/lib/contracts";
+import { relayAddRoot, relayRevokeRoot } from "@/lib/relayer";
 import { initPoseidon, poseidonHash } from "@/lib/poseidon";
 import { buildMerkleTree } from "@/lib/merkle";
 import {
@@ -45,7 +45,7 @@ function TxStatus({
 
 // Main page 
 export default function AdminPage() {
-  const { isConnected } = useAccount();
+  const publicClient = usePublicClient();
 
   // Member registration types 
   interface MemberInput {
@@ -71,21 +71,15 @@ export default function AdminPage() {
 
   //Add root state 
   const [addRootInput, setAddRootInput] = useState<string>("");
-  const {
-    writeContract: addRoot,
-    data: addHash,
-    isPending: addPending,
-    error: addError,
-  } = useWriteContract();
+  const [addHash, setAddHash] = useState<`0x${string}` | undefined>();
+  const [addPending, setAddPending] = useState(false);
+  const [addError, setAddError] = useState("");
 
   //Revoke root state
   const [revokeInput, setRevokeInput] = useState<string>("");
-  const {
-    writeContract: revokeRoot,
-    data: revokeHash,
-    isPending: revokePending,
-    error: revokeError,
-  } = useWriteContract();
+  const [revokeHash, setRevokeHash] = useState<`0x${string}` | undefined>();
+  const [revokePending, setRevokePending] = useState(false);
+  const [revokeError, setRevokeError] = useState("");
 
   //Live event log
   const [events, setEvents] = useState<RootEvent[]>([]);
@@ -220,34 +214,39 @@ export default function AdminPage() {
     }
   }, []);
 
-  const handleAddRoot = () => {
+  const handleAddRoot = async () => {
     if (!addRootInput) return;
-    addRoot({
-      address: REGISTRY_ADDRESS,
-      abi: REGISTRY_ABI,
-      functionName: "addRoot",
-      args: [BigInt(addRootInput)],
-    });
+    setAddError("");
+    setAddPending(true);
+    try {
+      const { txHash } = await relayAddRoot(addRootInput.trim());
+      setAddHash(txHash);
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
+      }
+    } catch (e: unknown) {
+      setAddError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAddPending(false);
+    }
   };
 
-  const handleRevokeRoot = () => {
+  const handleRevokeRoot = async () => {
     if (!revokeInput) return;
-    revokeRoot({
-      address: REGISTRY_ADDRESS,
-      abi: REGISTRY_ABI,
-      functionName: "revokeRoot",
-      args: [BigInt(revokeInput)],
-    });
+    setRevokeError("");
+    setRevokePending(true);
+    try {
+      const { txHash } = await relayRevokeRoot(revokeInput.trim());
+      setRevokeHash(txHash);
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
+      }
+    } catch (e: unknown) {
+      setRevokeError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRevokePending(false);
+    }
   };
-
-  if (!isConnected) {
-    return (
-      <div className="card text-center text-slate-400">
-        <span className="material-symbols-outlined text-4xl text-white/20 mb-4 block">admin_panel_settings</span>
-        Connect your wallet to manage Merkle roots.
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-12">
@@ -437,7 +436,7 @@ export default function AdminPage() {
         <TxStatus hash={addHash} label="Adding root" />
         {addError && (
           <p className="bg-red-900/30 border border-red-500/30 p-3 text-xs text-red-400">
-            {addError.message}
+            {addError}
           </p>
         )}
       </section>
@@ -470,7 +469,7 @@ export default function AdminPage() {
         <TxStatus hash={revokeHash} label="Revoking root" />
         {revokeError && (
           <p className="bg-red-900/30 border border-red-500/30 p-3 text-xs text-red-400">
-            {revokeError.message}
+            {revokeError}
           </p>
         )}
       </section>

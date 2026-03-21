@@ -85,13 +85,14 @@ export async function generateProofRaw(input: Record<string, string | string[]>)
     return snarkjs.groth16.fullProve(input, WASM_PATH, ZKEY_PATH);
 }
 
-export function formatProofForContract(proof: any) {
-    return {
-        pA: [proof.pi_a[0], proof.pi_a[1]] as [string, string],
-        pB: [
-            [proof.pi_b[0][1], proof.pi_b[0][0]],
-            [proof.pi_b[1][1], proof.pi_b[1][0]],
-        ] as [[string, string], [string, string]],
-        pC: [proof.pi_c[0], proof.pi_c[1]] as [string, string],
-    };
+export async function formatProofForContract(proof: any, publicSignals: string[]) {
+    const calldata = await snarkjs.groth16.exportSolidityCallData(proof, publicSignals);
+    const [pA, pB, pC] = JSON.parse(`[${calldata}]`) as [
+        [string, string],
+        [[string, string], [string, string]],
+        [string, string],
+        [string, string, string],
+    ];
+
+    return { pA, pB, pC };
 }

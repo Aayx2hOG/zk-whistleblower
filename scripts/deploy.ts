@@ -2,9 +2,9 @@ import { network } from "hardhat";
 import { writeFileSync, mkdirSync, readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 
-const { ethers } = await network.connect();
-
 async function main() {
+    const { ethers } = (await network.connect()) as any;
+
     const verifier = await ethers.deployContract("Groth16Verifier");
     const verifierAddr = await verifier.getAddress();
     console.log("Groth16Verifier:", verifierAddr);
@@ -14,6 +14,7 @@ async function main() {
     console.log("WhistleblowerRegistry:", registryAddr);
 
     // Save addresses for frontend
+    // @ts-ignore
     const networkName = network.name ?? process.env.HARDHAT_NETWORK ?? "localhost";
     const frontendEnvPath = resolve(import.meta.dirname, "../frontend/.env.local");
 
