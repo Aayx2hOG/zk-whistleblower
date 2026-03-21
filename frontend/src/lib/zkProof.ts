@@ -27,6 +27,12 @@ async function fetchBytes(url: string): Promise<Uint8Array> {
   return new Uint8Array(await res.arrayBuffer());
 }
 
+async function fetchJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.statusText}`);
+  return (await res.json()) as T;
+}
+
 export async function generateZKProof(input: ProofInput): Promise<FormattedProof> {
   const { initPoseidon } = await import("./poseidon");
   await initPoseidon();
@@ -49,21 +55,43 @@ export async function generateZKProof(input: ProofInput): Promise<FormattedProof
   // snarkjs is huge, so we import it dynamically to keep it out of the SSR bundle
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const snarkjs = await import("snarkjs") as any;
-  const [wasm, zkey] = await Promise.all([
+  const [wasm, zkey, vKey] = await Promise.all([
     fetchBytes("/circuits/membership.wasm"),
     fetchBytes("/circuits/membership_final.zkey"),
+    fetchJson<unknown>("/circuits/verification_key.json"),
   ]);
 
-  const { proof } = await snarkjs.groth16.fullProve(circuitInput, wasm, zkey);
+  const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+    circuitInput,
+    wasm,
+    zkey
+  );
+  const calldata = await snarkjs.groth16.exportSolidityCallData(
+    proof,
+    publicSignals
+  );
 
-  // pB must be transposed to match Solidity verifier convention
+  const isValid = await snarkjs.groth16.verify(vKey, publicSignals, proof);
+  if (!isValid) {
+    throw new Error(
+      "Local proof verification failed. Circuit artifacts may be inconsistent (wasm/zkey/verification_key)."
+    );
+  }
+
+  const [pA, pB, pC] = JSON.parse(`[${calldata}]`) as [
+    [string, string],
+    [[string, string], [string, string]],
+    [string, string],
+    [string, string, string],
+  ];
+
   const formatted: FormattedProof = {
-    pA: [BigInt(proof.pi_a[0]), BigInt(proof.pi_a[1])],
+    pA: [BigInt(pA[0]), BigInt(pA[1])],
     pB: [
-      [BigInt(proof.pi_b[0][1]), BigInt(proof.pi_b[0][0])],
-      [BigInt(proof.pi_b[1][1]), BigInt(proof.pi_b[1][0])],
+      [BigInt(pB[0][0]), BigInt(pB[0][1])],
+      [BigInt(pB[1][0]), BigInt(pB[1][1])],
     ],
-    pC: [BigInt(proof.pi_c[0]), BigInt(proof.pi_c[1])],
+    pC: [BigInt(pC[0]), BigInt(pC[1])],
     nullifierHash,
     root: input.root,
     externalNullifier: input.externalNullifier,

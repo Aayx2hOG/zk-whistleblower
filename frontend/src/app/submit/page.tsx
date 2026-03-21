@@ -2,8 +2,9 @@
 
 import { useState, useCallback, useEffect } from "react";
 import {
-  usePublicClient,
 } from "wagmi";
+import { createPublicClient, http } from "viem";
+import { hardhat, sepolia } from "viem/chains";
 import { REGISTRY_ABI, REGISTRY_ADDRESS, CATEGORIES } from "@/lib/contracts";
 import { relaySubmitReport } from "@/lib/relayer";
 import { initPoseidon } from "@/lib/poseidon";
@@ -16,6 +17,27 @@ import { getDemoMembers, type DemoMember } from "@/lib/demoOrg";
 import { getCurrentEpoch, formatEpochRange } from "@/lib/epoch";
 
 const SUBMIT_REPORT_GAS_LIMIT = 12_000_000n;
+const APP_NETWORK = process.env.NEXT_PUBLIC_NETWORK_NAME?.toLowerCase();
+const APP_CHAIN = APP_NETWORK === "sepolia" ? sepolia : hardhat;
+const appPublicClient = createPublicClient({
+  chain: APP_CHAIN,
+  transport: http(process.env.NEXT_PUBLIC_RPC_URL),
+});
+
+const VERIFIER_ABI = [
+  {
+    type: "function",
+    name: "verifyProof",
+    stateMutability: "view",
+    inputs: [
+      { name: "_pA", type: "uint256[2]" },
+      { name: "_pB", type: "uint256[2][2]" },
+      { name: "_pC", type: "uint256[2]" },
+      { name: "_pubSignals", type: "uint256[3]" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+] as const;
 
 function Step({
   n,
@@ -46,8 +68,6 @@ function Step({
 }
 
 export default function SubmitPage() {
-  const publicClient = usePublicClient();
-
   const [keyFileJson, setKeyFileJson] = useState("");
   const [keyFilePassword, setKeyFilePassword] = useState("");
   const [keyImportStatus, setKeyImportStatus] = useState<
@@ -218,7 +238,7 @@ export default function SubmitPage() {
       return "Category must be one of 0..3.";
     }
     if (msg.includes("InvalidZKProof")) {
-      return "Proof verification failed. Ensure secret, leaf index, commitments list, and epoch exactly match the registered root.";
+      return "Proof verification failed. Ensure secret, leaf index, commitments list, and epoch exactly match the registered root. If this persists, your deployed verifier may not match the frontend zkey artifacts.";
     }
     if (
       msg.includes("exceeds transaction gas cap") ||
@@ -229,6 +249,9 @@ export default function SubmitPage() {
     if (msg.includes("Internal error")) {
       return "RPC returned an internal error while simulating or sending the tx. Most common cause is an invalid proof/public inputs mismatch. Re-generate proof after reloading the exact root + epoch context.";
     }
+    if (msg.includes("Failed to fetch") || msg.includes("HTTP request failed")) {
+      return "RPC connection failed. Set NEXT_PUBLIC_NETWORK_NAME=sepolia and NEXT_PUBLIC_RPC_URL in frontend/.env.local, then restart frontend.";
+    }
     return msg;
   };
 
@@ -236,10 +259,6 @@ export default function SubmitPage() {
     if (!proof) return;
     setSubmitError("");
     setSubmitSuccess(false);
-    if (!publicClient) {
-      setSubmitError("Public client not ready. Refresh and try again.");
-      return;
-    }
     if (!encryptedCID.trim()) {
       setSubmitError("Upload encrypted report first to get CID.");
       return;
@@ -248,9 +267,19 @@ export default function SubmitPage() {
     setSubmitPending(true);
     const encoded = new TextEncoder().encode(encryptedCID);
     const cidHex = `0x${Array.from(encoded).map(b => b.toString(16).padStart(2, '0')).join('')}`;
+    const submitArgs = [
+      proof.pA,
+      proof.pB,
+      proof.pC,
+      proof.root,
+      proof.nullifierHash,
+      proof.externalNullifier,
+      cidHex as `0x${string}`,
+      category,
+    ] as const;
 
     try {
-      const rootActive = await publicClient.readContract({
+      const rootActive = await appPublicClient.readContract({
         address: REGISTRY_ADDRESS,
         abi: REGISTRY_ABI,
         functionName: "roots",
@@ -261,7 +290,7 @@ export default function SubmitPage() {
         return;
       }
 
-      const nullifierUsed = await publicClient.readContract({
+      const nullifierUsed = await appPublicClient.readContract({
         address: REGISTRY_ADDRESS,
         abi: REGISTRY_ABI,
         functionName: "usedNullifiers",
@@ -271,6 +300,39 @@ export default function SubmitPage() {
         setSubmitError(mapContractError("NullifierAlreadyUsed"));
         return;
       }
+
+      const verifierAddress = await appPublicClient.readContract({
+        address: REGISTRY_ADDRESS,
+        abi: REGISTRY_ABI,
+        functionName: "verifier",
+      });
+
+      const verifierAcceptsProof = await appPublicClient.readContract({
+        address: verifierAddress,
+        abi: VERIFIER_ABI,
+        functionName: "verifyProof",
+        args: [
+          proof.pA,
+          proof.pB,
+          proof.pC,
+          [proof.root, proof.nullifierHash, proof.externalNullifier],
+        ],
+      });
+
+      if (!verifierAcceptsProof) {
+        setSubmitError(
+          "Proof is locally valid but rejected by deployed verifier. Your on-chain verifier and frontend circuit artifacts are out of sync. Regenerate artifacts, redeploy contracts, update NEXT_PUBLIC_REGISTRY_ADDRESS, then retry."
+        );
+        return;
+      }
+
+      // Preflight simulation catches verifier/custom errors before relaying a paid tx.
+      await appPublicClient.simulateContract({
+        address: REGISTRY_ADDRESS,
+        abi: REGISTRY_ABI,
+        functionName: "submitReport",
+        args: submitArgs,
+      });
 
       const { txHash } = await relaySubmitReport({
         pA: [proof.pA[0].toString(), proof.pA[1].toString()],
@@ -287,7 +349,7 @@ export default function SubmitPage() {
       });
 
       setSubmittedTxHash(txHash);
-      await publicClient.waitForTransactionReceipt({ hash: txHash });
+      await appPublicClient.waitForTransactionReceipt({ hash: txHash });
       setSubmitSuccess(true);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);

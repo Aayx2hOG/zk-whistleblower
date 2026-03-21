@@ -86,6 +86,13 @@ export const REGISTRY_ABI = [
   },
   {
     type: "function",
+    name: "verifier",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "address" }],
+  },
+  {
+    type: "function",
     name: "roots",
     stateMutability: "view",
     inputs: [{ name: "root", type: "uint256" }],

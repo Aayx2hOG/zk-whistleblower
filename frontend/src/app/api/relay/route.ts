@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createWalletClient, http } from "viem";
+import { createPublicClient, createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
 import { REGISTRY_ABI, REGISTRY_ADDRESS } from "@/lib/contracts";
@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
 
         const account = privateKeyToAccount(privateKey);
         const walletClient = createWalletClient({ account, chain: sepolia, transport: http(rpcUrl) });
+        const publicClient = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
 
         let txHash: `0x${string}`;
 
@@ -103,7 +104,24 @@ export async function POST(req: NextRequest) {
             });
         }
 
-        return NextResponse.json({ txHash });
+        const receipt = await publicClient.waitForTransactionReceipt({
+            hash: txHash,
+            timeout: 120_000,
+        });
+
+        if (receipt.status !== "success") {
+            return NextResponse.json(
+                { error: "Transaction reverted", txHash, receiptStatus: receipt.status },
+                { status: 500 }
+            );
+        }
+
+        return NextResponse.json({
+            txHash,
+            receiptStatus: receipt.status,
+            blockNumber: receipt.blockNumber.toString(),
+            settled: true,
+        });
     } catch (error) {
         const message = error instanceof Error ? error.message : "Relayer failed";
         return NextResponse.json({ error: message }, { status: 500 });

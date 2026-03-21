@@ -1,5 +1,8 @@
 export interface RelayResponse {
     txHash: `0x${string}`;
+    settled?: boolean;
+    receiptStatus?: "success" | "reverted";
+    blockNumber?: string;
 }
 
 type RelayRequest =
@@ -28,6 +31,9 @@ async function relayTx(body: RelayRequest): Promise<RelayResponse> {
 
     const data = (await res.json().catch(() => ({}))) as {
         txHash?: `0x${string}`;
+        settled?: boolean;
+        receiptStatus?: "success" | "reverted";
+        blockNumber?: string;
         error?: string;
     };
 
@@ -35,7 +41,12 @@ async function relayTx(body: RelayRequest): Promise<RelayResponse> {
         throw new Error(data.error || `Relayer failed (${res.status})`);
     }
 
-    return { txHash: data.txHash };
+    return {
+        txHash: data.txHash,
+        settled: data.settled,
+        receiptStatus: data.receiptStatus,
+        blockNumber: data.blockNumber,
+    };
 }
 
 export function relayAddRoot(root: string) {

@@ -4,7 +4,6 @@ import { useState, useCallback, useRef } from "react";
 import {
   useWaitForTransactionReceipt,
   useWatchContractEvent,
-  usePublicClient,
 } from "wagmi";
 import { REGISTRY_ABI, REGISTRY_ADDRESS } from "@/lib/contracts";
 import { relayAddRoot, relayRevokeRoot } from "@/lib/relayer";
@@ -29,12 +28,21 @@ interface RootEvent {
 function TxStatus({
   hash,
   label,
+  settled,
 }: {
   hash?: `0x${string}`;
   label: string;
+  settled?: boolean;
 }) {
   const { isLoading, isSuccess } = useWaitForTransactionReceipt({ hash });
   if (!hash) return null;
+  if (settled) {
+    return (
+      <p className="mt-2 text-xs">
+        <span className="text-brand-500">✓ Confirmed!</span>
+      </p>
+    );
+  }
   return (
     <p className="mt-2 text-xs">
       {isLoading && <span className="text-yellow-400">⏳ {label}…</span>}
@@ -45,8 +53,6 @@ function TxStatus({
 
 // Main page 
 export default function AdminPage() {
-  const publicClient = usePublicClient();
-
   // Member registration types 
   interface MemberInput {
     id: string;
@@ -72,12 +78,14 @@ export default function AdminPage() {
   //Add root state 
   const [addRootInput, setAddRootInput] = useState<string>("");
   const [addHash, setAddHash] = useState<`0x${string}` | undefined>();
+  const [addSettled, setAddSettled] = useState(false);
   const [addPending, setAddPending] = useState(false);
   const [addError, setAddError] = useState("");
 
   //Revoke root state
   const [revokeInput, setRevokeInput] = useState<string>("");
   const [revokeHash, setRevokeHash] = useState<`0x${string}` | undefined>();
+  const [revokeSettled, setRevokeSettled] = useState(false);
   const [revokePending, setRevokePending] = useState(false);
   const [revokeError, setRevokeError] = useState("");
 
@@ -217,13 +225,15 @@ export default function AdminPage() {
   const handleAddRoot = async () => {
     if (!addRootInput) return;
     setAddError("");
+    setAddSettled(false);
     setAddPending(true);
     try {
-      const { txHash } = await relayAddRoot(addRootInput.trim());
+      const { txHash, settled, receiptStatus } = await relayAddRoot(addRootInput.trim());
       setAddHash(txHash);
-      if (publicClient) {
-        await publicClient.waitForTransactionReceipt({ hash: txHash });
+      if (receiptStatus === "reverted") {
+        throw new Error("Add root transaction reverted on-chain");
       }
+      setAddSettled(Boolean(settled));
     } catch (e: unknown) {
       setAddError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -234,13 +244,15 @@ export default function AdminPage() {
   const handleRevokeRoot = async () => {
     if (!revokeInput) return;
     setRevokeError("");
+    setRevokeSettled(false);
     setRevokePending(true);
     try {
-      const { txHash } = await relayRevokeRoot(revokeInput.trim());
+      const { txHash, settled, receiptStatus } = await relayRevokeRoot(revokeInput.trim());
       setRevokeHash(txHash);
-      if (publicClient) {
-        await publicClient.waitForTransactionReceipt({ hash: txHash });
+      if (receiptStatus === "reverted") {
+        throw new Error("Revoke root transaction reverted on-chain");
       }
+      setRevokeSettled(Boolean(settled));
     } catch (e: unknown) {
       setRevokeError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -433,7 +445,7 @@ export default function AdminPage() {
         >
           {addPending ? "Submitting…" : "Add Root"}
         </button>
-        <TxStatus hash={addHash} label="Adding root" />
+        <TxStatus hash={addHash} label="Adding root" settled={addSettled} />
         {addError && (
           <p className="bg-red-900/30 border border-red-500/30 p-3 text-xs text-red-400">
             {addError}
@@ -466,7 +478,7 @@ export default function AdminPage() {
         >
           {revokePending ? "Submitting…" : "Revoke Root"}
         </button>
-        <TxStatus hash={revokeHash} label="Revoking root" />
+        <TxStatus hash={revokeHash} label="Revoking root" settled={revokeSettled} />
         {revokeError && (
           <p className="bg-red-900/30 border border-red-500/30 p-3 text-xs text-red-400">
             {revokeError}

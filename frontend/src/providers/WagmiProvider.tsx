@@ -4,16 +4,18 @@ import {
   getDefaultConfig,
 } from "@rainbow-me/rainbowkit";
 import { WagmiProvider } from "wagmi";
-import { hardhat } from "wagmi/chains";
+import { hardhat, sepolia } from "wagmi/chains";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactNode, useState } from "react";
 
-// Hardhat local network — used for development as-is.
+const networkName = process.env.NEXT_PUBLIC_NETWORK_NAME?.toLowerCase();
+const activeChains = networkName === "sepolia" ? [sepolia] : [hardhat];
+
 const config = getDefaultConfig({
   appName: "ZK Whistleblower",
   projectId:
     process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "placeholder_dev_id",
-  chains: [hardhat],
+  chains: activeChains,
   ssr: true,
 });
 
