@@ -9,6 +9,7 @@ import {
 import { REGISTRY_ABI, REGISTRY_ADDRESS, CATEGORIES } from "@/lib/contracts";
 import { decryptReport } from "@/lib/encryption";
 import { fetchFromIPFS } from "@/lib/ipfs";
+import { useOrg } from "@/providers/OrgProvider";
 
 // types
 interface Report {
@@ -144,6 +145,7 @@ function ReportCard({ report }: { report: Report }) {
 
 //review page
 export default function ReviewerPage() {
+  const { selectedOrgId } = useOrg();
   const publicClient = usePublicClient();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(false);
@@ -156,7 +158,8 @@ export default function ReviewerPage() {
   } = useReadContract({
     address: REGISTRY_ADDRESS,
     abi: REGISTRY_ABI,
-    functionName: "getReportCount",
+    functionName: "getOrgReportCount",
+    args: [BigInt(selectedOrgId)],
   });
 
   useEffect(() => {
@@ -182,6 +185,7 @@ export default function ReviewerPage() {
 
     const count = Number(reportCount);
     if (count === 0) {
+      setReports([]);
       setLoading(false);
       return;
     }
@@ -196,12 +200,22 @@ export default function ReviewerPage() {
       setLoading(true);
       setError("");
       try {
-        const calls = Array.from({ length: count }, (_, i) =>
+        const reportIdCalls = Array.from({ length: count }, (_, i) =>
+          publicClient.readContract({
+            address: REGISTRY_ADDRESS,
+            abi: REGISTRY_ABI,
+            functionName: "getOrgReportIdAt",
+            args: [BigInt(selectedOrgId), BigInt(i)],
+          })
+        );
+        const reportIds = await Promise.all(reportIdCalls);
+
+        const calls = reportIds.map((reportId) =>
           publicClient.readContract({
             address: REGISTRY_ADDRESS,
             abi: REGISTRY_ABI,
             functionName: "getReport",
-            args: [BigInt(i)],
+            args: [reportId],
           })
         );
         const results = await Promise.all(calls);
@@ -219,7 +233,7 @@ export default function ReviewerPage() {
             const cidString = decodeCid(row.encryptedCID);
 
             return {
-              id: BigInt(i),
+              id: reportIds[i],
               nullifierHash: row.nullifierHash,
               encryptedCID: cidString,
               timestamp: row.timestamp,
@@ -234,24 +248,27 @@ export default function ReviewerPage() {
         setLoading(false);
       }
     })();
-  }, [reportCount, countLoading, countError, publicClient]);
+  }, [reportCount, countLoading, countError, publicClient, selectedOrgId]);
 
   //real time report fetch
   useWatchContractEvent({
     address: REGISTRY_ADDRESS,
     abi: REGISTRY_ABI,
-    eventName: "ReportSubmitted",
+    eventName: "ReportSubmittedForOrg",
     onLogs(logs) {
 
       logs.forEach((log) => {
         if (!("args" in log) || !log.args) return;
         const args = log.args as {
           reportId: bigint;
+          orgId: bigint;
           nullifierHash: bigint;
           encryptedCID: Uint8Array | string;
           category: number;
           timestamp: bigint;
         };
+
+        if (Number(args.orgId) !== selectedOrgId) return;
 
         const cidString = decodeCid(args.encryptedCID);
 
@@ -286,6 +303,9 @@ export default function ReviewerPage() {
               On-chain whistleblower reports // Real-time updates
             </p>
           </div>
+          <p className="text-slate-500 text-xs font-mono tracking-tight mt-2">
+            Active org: {selectedOrgId}
+          </p>
         </div>
         <div className="border border-white/10 bg-white/5 p-4 text-center">
           <p className="text-2xl font-black text-white">

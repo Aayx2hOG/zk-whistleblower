@@ -5,8 +5,10 @@ import { buildMerkleTree } from "@/lib/merkle";
 import { addDemoMember, clearDemoMembers, getDemoMembers, removeDemoMember, type DemoMember } from "@/lib/demoOrg";
 import { generateSecret } from "@/lib/secretGen";
 import { initPoseidon, poseidonHash } from "@/lib/poseidon";
+import { useOrg } from "@/providers/OrgProvider";
 
 export default function JoinOrgPage() {
+  const { selectedOrgId } = useOrg();
   const [memberId, setMemberId] = useState("");
   const [members, setMembers] = useState<DemoMember[]>([]);
   const [poseidonReady, setPoseidonReady] = useState(false);
@@ -14,8 +16,8 @@ export default function JoinOrgPage() {
   const [error, setError] = useState("");
 
   const refreshMembers = useCallback(() => {
-    setMembers(getDemoMembers());
-  }, []);
+    setMembers(getDemoMembers(selectedOrgId));
+  }, [selectedOrgId]);
 
   useEffect(() => {
     refreshMembers();
@@ -54,7 +56,7 @@ export default function JoinOrgPage() {
       const secret = generateSecret();
       const commitment = poseidonHash([secret]);
 
-      addDemoMember({
+      addDemoMember(selectedOrgId, {
         id,
         secret: secret.toString(),
         commitment: commitment.toString(),
@@ -67,15 +69,15 @@ export default function JoinOrgPage() {
       setError(e instanceof Error ? e.message : String(e));
       setStatus("error");
     }
-  }, [memberId, refreshMembers]);
+  }, [memberId, refreshMembers, selectedOrgId]);
 
   const handleRemove = (id: string) => {
-    removeDemoMember(id);
+    removeDemoMember(selectedOrgId, id);
     refreshMembers();
   };
 
   const handleClearAll = () => {
-    clearDemoMembers();
+    clearDemoMembers(selectedOrgId);
     refreshMembers();
   };
 
@@ -87,6 +89,9 @@ export default function JoinOrgPage() {
         </h1>
         <p className="text-slate-500 text-sm font-mono tracking-tight">
           Generate a private secret locally, compute your commitment, and join the local demo member list.
+        </p>
+        <p className="text-slate-500 text-xs font-mono tracking-tight mt-2">
+          Active org: {selectedOrgId}
         </p>
       </div>
 

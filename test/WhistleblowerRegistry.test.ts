@@ -17,6 +17,37 @@ function cidBytes(cid: string): `0x${string}` {
     return ethers.hexlify(ethers.toUtf8Bytes(cid));
 }
 
+async function expectWitnessGenerationFailure(promise: Promise<unknown>) {
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    const originalError = console.error;
+
+    process.stderr.write = ((...args: Parameters<typeof process.stderr.write>) => {
+        const chunk = args[0];
+        if (typeof chunk === "string" && chunk.includes("Error in template MembershipProof")) {
+            return true;
+        }
+        return originalWrite(...args);
+    }) as typeof process.stderr.write;
+
+    console.error = (...args: unknown[]) => {
+        if (
+            args.some(
+                (arg) => typeof arg === "string" && arg.includes("Error in template MembershipProof")
+            )
+        ) {
+            return;
+        }
+        originalError(...(args as Parameters<typeof console.error>));
+    };
+
+    try {
+        await expect(promise).to.be.rejected;
+    } finally {
+        process.stderr.write = originalWrite;
+        console.error = originalError;
+    }
+}
+
 describe("WhistleblowerRegistry", function () {
     let verifier: any;
     let registry: any;
@@ -43,6 +74,47 @@ describe("WhistleblowerRegistry", function () {
         ]);
 
         await registry.addRoot(tree.root);
+    });
+
+    describe("Organization management", function () {
+        it("should have default organization active", async function () {
+            const defaultOrg = await registry.getOrganization(0);
+            expect(defaultOrg.name).to.equal("Default");
+            expect(defaultOrg.active).to.equal(true);
+        });
+
+        it("should allow owner to create organization", async function () {
+            await expect(registry.createOrganization(1, "Engineering"))
+                .to.emit(registry, "OrganizationCreated");
+
+            const org = await registry.getOrganization(1);
+            expect(org.name).to.equal("Engineering");
+            expect(org.active).to.equal(true);
+        });
+
+        it("should reject duplicate organization id", async function () {
+            await expect(
+                registry.createOrganization(1, "Engineering Again")
+            ).to.be.revertedWithCustomError(registry, "OrganizationAlreadyExists");
+        });
+
+        it("should allow owner to deactivate/reactivate organization", async function () {
+            await expect(registry.setOrganizationActive(1, false))
+                .to.emit(registry, "OrganizationStatusUpdated");
+
+            let org = await registry.getOrganization(1);
+            expect(org.active).to.equal(false);
+
+            await registry.setOrganizationActive(1, true);
+            org = await registry.getOrganization(1);
+            expect(org.active).to.equal(true);
+        });
+
+        it("should reject non-owner organization actions", async function () {
+            await expect(
+                registry.connect(nonOwner).createOrganization(2, "HR")
+            ).to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount");
+        });
     });
 
     describe("Root management", function () {
@@ -208,6 +280,113 @@ describe("WhistleblowerRegistry", function () {
             ).to.be.revertedWithCustomError(registry, "InvalidCategory");
         });
 
+        it("should scope roots and nullifiers per organization", async function () {
+            this.timeout(180000);
+
+            await registry.createOrganization(10, "HR");
+            await registry.createOrganization(20, "Legal");
+
+            const orgSecrets = [701n, 702n];
+            const orgCommitments = orgSecrets.map((s) => poseidonHash([s]));
+            const orgTree = buildMerkleTree(orgCommitments);
+            const orgExternalNullifier = 9901n;
+
+            await registry.addRootForOrg(10, orgTree.root);
+            await registry.addRootForOrg(20, orgTree.root);
+
+            const { proof, publicSignals, nullifierHash } = await generateProof(
+                orgSecrets[0], orgTree, 0, orgExternalNullifier
+            );
+            const { pA, pB, pC } = await formatProofForContract(proof, publicSignals);
+
+            await registry.submitReportForOrg(
+                10,
+                pA,
+                pB,
+                pC,
+                orgTree.root,
+                nullifierHash,
+                orgExternalNullifier,
+                cidBytes("QmOrg10First"),
+                1
+            );
+
+            await registry.submitReportForOrg(
+                20,
+                pA,
+                pB,
+                pC,
+                orgTree.root,
+                nullifierHash,
+                orgExternalNullifier,
+                cidBytes("QmOrg20First"),
+                2
+            );
+
+            await expect(
+                registry.submitReportForOrg(
+                    10,
+                    pA,
+                    pB,
+                    pC,
+                    orgTree.root,
+                    nullifierHash,
+                    orgExternalNullifier,
+                    cidBytes("QmOrg10Replay"),
+                    1
+                )
+            ).to.be.revertedWithCustomError(registry, "NullifierAlreadyUsed");
+
+            expect(await registry.getOrgReportCount(10)).to.equal(1);
+            expect(await registry.getOrgReportCount(20)).to.equal(1);
+        });
+
+        it("should reject submissions for unknown or inactive organizations", async function () {
+            this.timeout(60000);
+
+            const tempSecrets = [801n];
+            const tempCommitments = tempSecrets.map((s) => poseidonHash([s]));
+            const tempTree = buildMerkleTree(tempCommitments);
+            const tempExternalNullifier = 4001n;
+
+            const { proof, publicSignals, nullifierHash } = await generateProof(
+                tempSecrets[0], tempTree, 0, tempExternalNullifier
+            );
+            const { pA, pB, pC } = await formatProofForContract(proof, publicSignals);
+
+            await expect(
+                registry.submitReportForOrg(
+                    999,
+                    pA,
+                    pB,
+                    pC,
+                    tempTree.root,
+                    nullifierHash,
+                    tempExternalNullifier,
+                    cidBytes("QmUnknownOrg"),
+                    0
+                )
+            ).to.be.revertedWithCustomError(registry, "OrganizationDoesNotExist");
+
+            await registry.createOrganization(30, "Temp");
+            await registry.addRootForOrg(30, tempTree.root);
+            await registry.setOrganizationActive(30, false);
+
+            await expect(
+                registry.submitReportForOrg(
+                    30,
+                    pA,
+                    pB,
+                    pC,
+                    tempTree.root,
+                    nullifierHash,
+                    tempExternalNullifier,
+                    cidBytes("QmInactiveOrg"),
+                    0
+                )
+            ).to.be.revertedWithCustomError(registry, "OrganizationInactive");
+        });
+
         it("should allow 5 members to submit once each and reject replay", async function () {
             this.timeout(180000);
 
@@ -251,7 +430,7 @@ describe("WhistleblowerRegistry", function () {
 
     describe("Report retrieval", function () {
         it("should return correct report count", async function () {
-            expect(await registry.getReportCount()).to.equal(7);
+            expect(await registry.getReportCount()).to.equal(9);
         });
 
         it("should revert for non-existent report", async function () {
@@ -283,7 +462,7 @@ describe("WhistleblowerRegistry", function () {
             const { pathElements, pathIndices } = getMerkleProof(tree.layers, 0);
             const nullifierHash = poseidonHash([outsiderSecret, externalNullifier]);
 
-            await expect(
+            await expectWitnessGenerationFailure(
                 generateProofRaw({
                     root: tree.root.toString(),
                     nullifierHash: nullifierHash.toString(),
@@ -292,7 +471,7 @@ describe("WhistleblowerRegistry", function () {
                     pathElements: pathElements.map((x) => x.toString()),
                     pathIndices: pathIndices.map((x) => x.toString()),
                 })
-            ).to.be.rejected;
+            );
         });
 
         it("should fail witness generation for a tampered Merkle path", async function () {
@@ -302,7 +481,7 @@ describe("WhistleblowerRegistry", function () {
             tamperedPath[0] = 9999999999999n;
             const nullifierHash = poseidonHash([secrets[0], externalNullifier]);
 
-            await expect(
+            await expectWitnessGenerationFailure(
                 generateProofRaw({
                     root: tree.root.toString(),
                     nullifierHash: nullifierHash.toString(),
@@ -311,7 +490,7 @@ describe("WhistleblowerRegistry", function () {
                     pathElements: tamperedPath.map((x) => x.toString()),
                     pathIndices: pathIndices.map((x) => x.toString()),
                 })
-            ).to.be.rejected;
+            );
         });
 
         it("should fail witness generation for a wrong leaf index", async function () {
@@ -319,7 +498,7 @@ describe("WhistleblowerRegistry", function () {
             const { pathElements, pathIndices } = getMerkleProof(tree.layers, 1);
             const nullifierHash = poseidonHash([secrets[0], externalNullifier]);
 
-            await expect(
+            await expectWitnessGenerationFailure(
                 generateProofRaw({
                     root: tree.root.toString(),
                     nullifierHash: nullifierHash.toString(),
@@ -328,7 +507,7 @@ describe("WhistleblowerRegistry", function () {
                     pathElements: pathElements.map((x) => x.toString()),
                     pathIndices: pathIndices.map((x) => x.toString()),
                 })
-            ).to.be.rejected;
+            );
         });
 
         it("should fail witness generation for a mismatched nullifier hash", async function () {
@@ -336,7 +515,7 @@ describe("WhistleblowerRegistry", function () {
             const { pathElements, pathIndices } = getMerkleProof(tree.layers, 0);
             const wrongNullifier = poseidonHash([secrets[1], externalNullifier]);
 
-            await expect(
+            await expectWitnessGenerationFailure(
                 generateProofRaw({
                     root: tree.root.toString(),
                     nullifierHash: wrongNullifier.toString(),
@@ -345,7 +524,7 @@ describe("WhistleblowerRegistry", function () {
                     pathElements: pathElements.map((x) => x.toString()),
                     pathIndices: pathIndices.map((x) => x.toString()),
                 })
-            ).to.be.rejected;
+            );
         });
     });
 });

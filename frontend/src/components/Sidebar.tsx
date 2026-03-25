@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
+import { useOrg } from "@/providers/OrgProvider";
 
 const NAV_ITEMS = [
   { href: "/", icon: "grid_view", label: "Portal" },
@@ -13,10 +15,47 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { selectedOrgId, knownOrgIds, setSelectedOrgId } = useOrg();
+  const [manualOrgId, setManualOrgId] = useState(String(selectedOrgId));
+
+  const applyManualOrg = () => {
+    const parsed = Number(manualOrgId);
+    if (!Number.isFinite(parsed) || parsed < 0) return;
+    setSelectedOrgId(parsed);
+  };
 
   return (
     <aside className="w-full md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-white/10 p-6 flex flex-col gap-8 bg-primary">
       <div className="space-y-4">
+        <div className="space-y-2 border border-white/10 bg-white/5 p-3">
+          <p className="text-[10px] font-bold text-slate-500 tracking-[0.2em] uppercase">
+            Active Org
+          </p>
+          <select
+            className="input py-2 text-xs font-mono"
+            value={selectedOrgId}
+            onChange={(e) => setSelectedOrgId(Number(e.target.value))}
+          >
+            {knownOrgIds.map((orgId) => (
+              <option key={orgId} value={orgId}>
+                Org {orgId}
+              </option>
+            ))}
+          </select>
+          <div className="flex gap-2">
+            <input
+              className="input py-2 text-xs font-mono"
+              value={manualOrgId}
+              onChange={(e) => setManualOrgId(e.target.value)}
+              placeholder="Org ID"
+              inputMode="numeric"
+            />
+            <button className="btn-ghost text-xs px-3 py-2" onClick={applyManualOrg}>
+              Use
+            </button>
+          </div>
+        </div>
+
         <p className="text-[10px] font-bold text-slate-500 tracking-[0.2em] uppercase">
           Operations
         </p>

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Providers from "@/providers/WagmiProvider";
+import { OrgProvider } from "@/providers/OrgProvider";
 import Navbar from "@/components/Navbar";
 import Sidebar from "@/components/Sidebar";
 
@@ -29,15 +30,17 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen antialiased bg-background-dark text-slate-100 font-display selection:bg-white selection:text-black bg-grid">
         <Providers>
-          <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden">
-            <Navbar />
-            <div className="flex-1 flex flex-col md:flex-row">
-              <Sidebar />
-              <main className="flex-1 p-6 md:p-12 max-w-4xl mx-auto w-full">
-                {children}
-              </main>
+          <OrgProvider>
+            <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden">
+              <Navbar />
+              <div className="flex-1 flex flex-col md:flex-row">
+                <Sidebar />
+                <main className="flex-1 p-6 md:p-12 max-w-4xl mx-auto w-full">
+                  {children}
+                </main>
+              </div>
             </div>
-          </div>
+          </OrgProvider>
         </Providers>
       </body>
     </html>

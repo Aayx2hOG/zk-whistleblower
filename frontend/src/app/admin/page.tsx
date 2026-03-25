@@ -6,7 +6,12 @@ import {
   useWatchContractEvent,
 } from "wagmi";
 import { REGISTRY_ABI, REGISTRY_ADDRESS } from "@/lib/contracts";
-import { relayAddRoot, relayRevokeRoot } from "@/lib/relayer";
+import {
+  relayAddRootForOrg,
+  relayCreateOrganization,
+  relayRevokeRootForOrg,
+  relaySetOrganizationActive,
+} from "@/lib/relayer";
 import { initPoseidon, poseidonHash } from "@/lib/poseidon";
 import { buildMerkleTree } from "@/lib/merkle";
 import {
@@ -16,9 +21,11 @@ import {
   type MemberKeyFile,
 } from "@/lib/secretGen";
 import { getDemoMembers } from "@/lib/demoOrg";
+import { useOrg } from "@/providers/OrgProvider";
 
 
 interface RootEvent {
+  orgId: bigint;
   root: bigint;
   type: "added" | "revoked";
   blockNumber?: bigint;
@@ -53,6 +60,8 @@ function TxStatus({
 
 // Main page 
 export default function AdminPage() {
+  const { selectedOrgId, rememberOrgId } = useOrg();
+
   // Member registration types 
   interface MemberInput {
     id: string;
@@ -93,10 +102,23 @@ export default function AdminPage() {
   const [events, setEvents] = useState<RootEvent[]>([]);
   const seenEvents = useRef<Set<string>>(new Set());
 
+  // Organization management state
+  const [createOrgId, setCreateOrgId] = useState("");
+  const [createOrgName, setCreateOrgName] = useState("");
+  const [createOrgPending, setCreateOrgPending] = useState(false);
+  const [createOrgError, setCreateOrgError] = useState("");
+  const [createOrgSuccess, setCreateOrgSuccess] = useState("");
+
+  const [targetOrgId, setTargetOrgId] = useState(String(selectedOrgId));
+  const [targetOrgActive, setTargetOrgActive] = useState(true);
+  const [setOrgPending, setSetOrgPending] = useState(false);
+  const [setOrgError, setSetOrgError] = useState("");
+  const [setOrgSuccess, setSetOrgSuccess] = useState("");
+
   useWatchContractEvent({
     address: REGISTRY_ADDRESS,
     abi: REGISTRY_ABI,
-    eventName: "RootAdded",
+    eventName: "RootAddedForOrg",
     onLogs(logs) {
       logs.forEach((log) => {
         const key = `${log.transactionHash}-${log.logIndex}`;
@@ -104,7 +126,12 @@ export default function AdminPage() {
         seenEvents.current.add(key);
         if ("args" in log && log.args)
           setEvents((e) => [
-            { root: (log.args as { root: bigint }).root, type: "added", blockNumber: log.blockNumber },
+            {
+              orgId: (log.args as { orgId: bigint }).orgId,
+              root: (log.args as { root: bigint }).root,
+              type: "added",
+              blockNumber: log.blockNumber,
+            },
             ...e,
           ]);
       });
@@ -114,7 +141,7 @@ export default function AdminPage() {
   useWatchContractEvent({
     address: REGISTRY_ADDRESS,
     abi: REGISTRY_ABI,
-    eventName: "RootRevoked",
+    eventName: "RootRevokedForOrg",
     onLogs(logs) {
       logs.forEach((log) => {
         const key = `${log.transactionHash}-${log.logIndex}`;
@@ -122,7 +149,12 @@ export default function AdminPage() {
         seenEvents.current.add(key);
         if ("args" in log && log.args)
           setEvents((e) => [
-            { root: (log.args as { root: bigint }).root, type: "revoked", blockNumber: log.blockNumber },
+            {
+              orgId: (log.args as { orgId: bigint }).orgId,
+              root: (log.args as { root: bigint }).root,
+              type: "revoked",
+              blockNumber: log.blockNumber,
+            },
             ...e,
           ]);
       });
@@ -207,7 +239,7 @@ export default function AdminPage() {
 
     try {
       await initPoseidon();
-      const demoMembers = getDemoMembers();
+      const demoMembers = getDemoMembers(selectedOrgId);
       if (!demoMembers.length) {
         throw new Error("No demo members found. Add users on Join Org page first.");
       }
@@ -220,7 +252,53 @@ export default function AdminPage() {
     } catch (e: unknown) {
       setDemoRootMsg(e instanceof Error ? e.message : String(e));
     }
-  }, []);
+  }, [selectedOrgId]);
+
+  const handleCreateOrganization = async () => {
+    setCreateOrgError("");
+    setCreateOrgSuccess("");
+    const orgId = Number(createOrgId);
+    if (!Number.isFinite(orgId) || orgId < 0) {
+      setCreateOrgError("Enter a valid non-negative org id");
+      return;
+    }
+    if (!createOrgName.trim()) {
+      setCreateOrgError("Organization name is required");
+      return;
+    }
+
+    setCreateOrgPending(true);
+    try {
+      await relayCreateOrganization(orgId, createOrgName.trim());
+      rememberOrgId(orgId);
+      setCreateOrgSuccess(`Organization ${orgId} created`);
+    } catch (e: unknown) {
+      setCreateOrgError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCreateOrgPending(false);
+    }
+  };
+
+  const handleSetOrganizationActive = async () => {
+    setSetOrgError("");
+    setSetOrgSuccess("");
+    const orgId = Number(targetOrgId);
+    if (!Number.isFinite(orgId) || orgId < 0) {
+      setSetOrgError("Enter a valid non-negative org id");
+      return;
+    }
+
+    setSetOrgPending(true);
+    try {
+      await relaySetOrganizationActive(orgId, targetOrgActive);
+      rememberOrgId(orgId);
+      setSetOrgSuccess(`Organization ${orgId} updated`);
+    } catch (e: unknown) {
+      setSetOrgError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSetOrgPending(false);
+    }
+  };
 
   const handleAddRoot = async () => {
     if (!addRootInput) return;
@@ -228,7 +306,7 @@ export default function AdminPage() {
     setAddSettled(false);
     setAddPending(true);
     try {
-      const { txHash, settled, receiptStatus } = await relayAddRoot(addRootInput.trim());
+      const { txHash, settled, receiptStatus } = await relayAddRootForOrg(selectedOrgId, addRootInput.trim());
       setAddHash(txHash);
       if (receiptStatus === "reverted") {
         throw new Error("Add root transaction reverted on-chain");
@@ -247,7 +325,7 @@ export default function AdminPage() {
     setRevokeSettled(false);
     setRevokePending(true);
     try {
-      const { txHash, settled, receiptStatus } = await relayRevokeRoot(revokeInput.trim());
+      const { txHash, settled, receiptStatus } = await relayRevokeRootForOrg(selectedOrgId, revokeInput.trim());
       setRevokeHash(txHash);
       if (receiptStatus === "reverted") {
         throw new Error("Revoke root transaction reverted on-chain");
@@ -274,7 +352,66 @@ export default function AdminPage() {
             Merkle Root Management // On-Chain Registry
           </p>
         </div>
+        <p className="text-slate-500 text-xs font-mono tracking-tight mt-2">
+          Active org: {selectedOrgId}
+        </p>
       </div>
+
+      <section className="card space-y-6">
+        <div className="flex justify-between items-start mb-2">
+          <div>
+            <p className="step-label">00_ORGANIZATIONS</p>
+            <h2 className="section-heading">Organization Management</h2>
+          </div>
+          <span className="material-symbols-outlined text-white/20">apartment</span>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-3 bg-white/5 border border-white/10 p-4">
+            <p className="label">Create Organization</p>
+            <input
+              className="input font-mono text-xs"
+              placeholder="Org ID"
+              value={createOrgId}
+              onChange={(e) => setCreateOrgId(e.target.value)}
+            />
+            <input
+              className="input font-mono text-xs"
+              placeholder="Organization name"
+              value={createOrgName}
+              onChange={(e) => setCreateOrgName(e.target.value)}
+            />
+            <button className="btn-primary" onClick={handleCreateOrganization} disabled={createOrgPending}>
+              {createOrgPending ? "Submitting…" : "Create Organization"}
+            </button>
+            {createOrgError && <p className="text-[10px] font-mono text-red-400">{createOrgError}</p>}
+            {createOrgSuccess && <p className="text-[10px] font-mono text-green-400">{createOrgSuccess}</p>}
+          </div>
+
+          <div className="space-y-3 bg-white/5 border border-white/10 p-4">
+            <p className="label">Set Organization Status</p>
+            <input
+              className="input font-mono text-xs"
+              placeholder="Org ID"
+              value={targetOrgId}
+              onChange={(e) => setTargetOrgId(e.target.value)}
+            />
+            <select
+              className="input font-mono text-xs bg-primary"
+              value={targetOrgActive ? "active" : "inactive"}
+              onChange={(e) => setTargetOrgActive(e.target.value === "active")}
+            >
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+            <button className="btn-ghost" onClick={handleSetOrganizationActive} disabled={setOrgPending}>
+              {setOrgPending ? "Submitting…" : "Update Status"}
+            </button>
+            {setOrgError && <p className="text-[10px] font-mono text-red-400">{setOrgError}</p>}
+            {setOrgSuccess && <p className="text-[10px] font-mono text-green-400">{setOrgSuccess}</p>}
+          </div>
+        </div>
+      </section>
 
 
       <section className="card space-y-6">
@@ -295,7 +432,7 @@ export default function AdminPage() {
         <div className="bg-white/[0.03] border border-white/10 p-4 space-y-3">
           <p className="label">Use Join Org demo list</p>
           <p className="text-[10px] font-mono text-slate-600">
-            For the demo flow, compute root directly from members created on the Join Org page.
+            For the demo flow, compute root from members in active org {selectedOrgId}.
           </p>
           <button className="btn-ghost text-xs px-4 py-2" onClick={handleLoadRootFromDemoJoin}>
             Load Root From Join Org
@@ -438,6 +575,7 @@ export default function AdminPage() {
             onChange={(e) => setAddRootInput(e.target.value)}
           />
         </div>
+        <p className="text-[10px] font-mono text-slate-500">Target org: {selectedOrgId}</p>
         <button
           className="btn-primary"
           onClick={handleAddRoot}
@@ -471,6 +609,7 @@ export default function AdminPage() {
             onChange={(e) => setRevokeInput(e.target.value)}
           />
         </div>
+        <p className="text-[10px] font-mono text-slate-500">Target org: {selectedOrgId}</p>
         <button
           className="btn-danger"
           onClick={handleRevokeRoot}
@@ -497,7 +636,9 @@ export default function AdminPage() {
             <span className="material-symbols-outlined text-white/20">monitoring</span>
           </div>
           <ul className="space-y-2">
-            {events.map((ev, i) => (
+            {events
+              .filter((ev) => Number(ev.orgId) === selectedOrgId)
+              .map((ev, i) => (
               <li
                 key={i}
                 className="flex items-start gap-3 bg-white/5 border border-white/10 p-3 text-xs"
@@ -510,7 +651,7 @@ export default function AdminPage() {
                   {ev.type === "added" ? "✓ ADDED" : "✗ REVOKED"}
                 </span>
                 <span className="break-all font-mono text-slate-400">
-                  {ev.root.toString()}
+                  org={ev.orgId.toString()} root={ev.root.toString()}
                 </span>
               </li>
             ))}

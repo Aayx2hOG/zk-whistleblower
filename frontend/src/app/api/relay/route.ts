@@ -6,7 +6,15 @@ import { REGISTRY_ABI, REGISTRY_ADDRESS } from "@/lib/contracts";
 
 export const runtime = "nodejs";
 
-type RelayAction = "addRoot" | "revokeRoot" | "submitReport";
+type RelayAction =
+    | "addRoot"
+    | "addRootForOrg"
+    | "revokeRoot"
+    | "revokeRootForOrg"
+    | "createOrganization"
+    | "setOrganizationActive"
+    | "submitReport"
+    | "submitReportForOrg";
 
 function asBigInt(value: unknown, field: string): bigint {
     if (typeof value !== "string" || !value.trim()) {
@@ -24,6 +32,21 @@ function readConfig() {
 
     const normalizedKey = privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
     return { rpcUrl, privateKey: normalizedKey as `0x${string}` };
+}
+
+async function ensureOrganizationApisAvailable(publicClient: ReturnType<typeof createPublicClient>) {
+    try {
+        await publicClient.readContract({
+            address: REGISTRY_ADDRESS,
+            abi: REGISTRY_ABI,
+            functionName: "organizationExists",
+            args: [0n],
+        });
+    } catch {
+        throw new Error(
+            "This deployed registry does not support organization APIs. Redeploy the latest WhistleblowerRegistry and update NEXT_PUBLIC_REGISTRY_ADDRESS."
+        );
+    }
 }
 
 export async function POST(req: NextRequest) {
@@ -52,12 +75,77 @@ export async function POST(req: NextRequest) {
                 args: [asBigInt(body.payload.root, "root")],
                 account,
             });
+        } else if (body.action === "addRootForOrg") {
+            await ensureOrganizationApisAvailable(publicClient);
+            txHash = await walletClient.writeContract({
+                address: REGISTRY_ADDRESS,
+                abi: REGISTRY_ABI,
+                functionName: "addRootForOrg",
+                args: [
+                    asBigInt(body.payload.orgId, "orgId"),
+                    asBigInt(body.payload.root, "root"),
+                ],
+                account,
+            });
         } else if (body.action === "revokeRoot") {
             txHash = await walletClient.writeContract({
                 address: REGISTRY_ADDRESS,
                 abi: REGISTRY_ABI,
                 functionName: "revokeRoot",
                 args: [asBigInt(body.payload.root, "root")],
+                account,
+            });
+        } else if (body.action === "revokeRootForOrg") {
+            await ensureOrganizationApisAvailable(publicClient);
+            txHash = await walletClient.writeContract({
+                address: REGISTRY_ADDRESS,
+                abi: REGISTRY_ABI,
+                functionName: "revokeRootForOrg",
+                args: [
+                    asBigInt(body.payload.orgId, "orgId"),
+                    asBigInt(body.payload.root, "root"),
+                ],
+                account,
+            });
+        } else if (body.action === "createOrganization") {
+            await ensureOrganizationApisAvailable(publicClient);
+            const name = body.payload.name;
+            if (typeof name !== "string" || !name.trim()) {
+                return NextResponse.json({ error: "Invalid organization name" }, { status: 400 });
+            }
+
+            const orgId = asBigInt(body.payload.orgId, "orgId");
+            const exists = await publicClient.readContract({
+                address: REGISTRY_ADDRESS,
+                abi: REGISTRY_ABI,
+                functionName: "organizationExists",
+                args: [orgId],
+            });
+            if (exists) {
+                return NextResponse.json(
+                    { error: `Organization ${orgId.toString()} already exists` },
+                    { status: 409 }
+                );
+            }
+
+            txHash = await walletClient.writeContract({
+                address: REGISTRY_ADDRESS,
+                abi: REGISTRY_ABI,
+                functionName: "createOrganization",
+                args: [orgId, name.trim()],
+                account,
+            });
+        } else if (body.action === "setOrganizationActive") {
+            await ensureOrganizationApisAvailable(publicClient);
+            const active = body.payload.active;
+            if (typeof active !== "boolean") {
+                return NextResponse.json({ error: "Invalid active flag" }, { status: 400 });
+            }
+            txHash = await walletClient.writeContract({
+                address: REGISTRY_ADDRESS,
+                abi: REGISTRY_ABI,
+                functionName: "setOrganizationActive",
+                args: [asBigInt(body.payload.orgId, "orgId"), active],
                 account,
             });
         } else {
@@ -83,25 +171,38 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ error: "Invalid encryptedCIDHex" }, { status: 400 });
             }
 
-            txHash = await walletClient.writeContract({
-                address: REGISTRY_ADDRESS,
-                abi: REGISTRY_ABI,
-                functionName: "submitReport",
-                args: [
-                    [asBigInt(pA[0], "pA[0]"), asBigInt(pA[1], "pA[1]")],
-                    [
-                        [asBigInt(pB[0][0], "pB[0][0]"), asBigInt(pB[0][1], "pB[0][1]")],
-                        [asBigInt(pB[1][0], "pB[1][0]"), asBigInt(pB[1][1], "pB[1][1]")],
-                    ],
-                    [asBigInt(pC[0], "pC[0]"), asBigInt(pC[1], "pC[1]")],
-                    asBigInt(body.payload.root, "root"),
-                    asBigInt(body.payload.nullifierHash, "nullifierHash"),
-                    asBigInt(body.payload.externalNullifier, "externalNullifier"),
-                    encryptedCIDHex as `0x${string}`,
-                    category,
+            const commonArgs = [
+                [asBigInt(pA[0], "pA[0]"), asBigInt(pA[1], "pA[1]")],
+                [
+                    [asBigInt(pB[0][0], "pB[0][0]"), asBigInt(pB[0][1], "pB[0][1]")],
+                    [asBigInt(pB[1][0], "pB[1][0]"), asBigInt(pB[1][1], "pB[1][1]")],
                 ],
-                account,
-            });
+                [asBigInt(pC[0], "pC[0]"), asBigInt(pC[1], "pC[1]")],
+                asBigInt(body.payload.root, "root"),
+                asBigInt(body.payload.nullifierHash, "nullifierHash"),
+                asBigInt(body.payload.externalNullifier, "externalNullifier"),
+                encryptedCIDHex as `0x${string}`,
+                category,
+            ] as const;
+
+            if (body.action === "submitReportForOrg") {
+                await ensureOrganizationApisAvailable(publicClient);
+                txHash = await walletClient.writeContract({
+                    address: REGISTRY_ADDRESS,
+                    abi: REGISTRY_ABI,
+                    functionName: "submitReportForOrg",
+                    args: [asBigInt(body.payload.orgId, "orgId"), ...commonArgs],
+                    account,
+                });
+            } else {
+                txHash = await walletClient.writeContract({
+                    address: REGISTRY_ADDRESS,
+                    abi: REGISTRY_ABI,
+                    functionName: "submitReport",
+                    args: commonArgs,
+                    account,
+                });
+            }
         }
 
         const receipt = await publicClient.waitForTransactionReceipt({

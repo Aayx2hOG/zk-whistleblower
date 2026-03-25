@@ -9,7 +9,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactNode, useState } from "react";
 
 const networkName = process.env.NEXT_PUBLIC_NETWORK_NAME?.toLowerCase();
-const activeChains = networkName === "sepolia" ? [sepolia] : [hardhat];
+const activeChains = networkName === "sepolia" ? ([sepolia] as const) : ([hardhat] as const);
 
 const config = getDefaultConfig({
   appName: "ZK Whistleblower",

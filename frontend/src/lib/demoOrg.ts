@@ -7,14 +7,18 @@ export interface DemoMember {
 
 const DEMO_MEMBERS_KEY = "zk-whistleblower:demo-members";
 
+function demoMembersKey(orgId: number): string {
+  return `${DEMO_MEMBERS_KEY}:${orgId}`;
+}
+
 function canUseStorage(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 }
 
-export function getDemoMembers(): DemoMember[] {
+export function getDemoMembers(orgId = 0): DemoMember[] {
   if (!canUseStorage()) return [];
 
-  const raw = window.localStorage.getItem(DEMO_MEMBERS_KEY);
+  const raw = window.localStorage.getItem(demoMembersKey(orgId));
   if (!raw) return [];
 
   try {
@@ -29,13 +33,13 @@ export function getDemoMembers(): DemoMember[] {
   }
 }
 
-function writeDemoMembers(members: DemoMember[]): void {
+function writeDemoMembers(orgId: number, members: DemoMember[]): void {
   if (!canUseStorage()) return;
-  window.localStorage.setItem(DEMO_MEMBERS_KEY, JSON.stringify(members));
+  window.localStorage.setItem(demoMembersKey(orgId), JSON.stringify(members));
 }
 
-export function addDemoMember(newMember: Omit<DemoMember, "joinedAt">): DemoMember {
-  const members = getDemoMembers();
+export function addDemoMember(orgId: number, newMember: Omit<DemoMember, "joinedAt">): DemoMember {
+  const members = getDemoMembers(orgId);
 
   const duplicateId = members.some((m) => m.id.toLowerCase() === newMember.id.toLowerCase());
   if (duplicateId) {
@@ -53,23 +57,23 @@ export function addDemoMember(newMember: Omit<DemoMember, "joinedAt">): DemoMemb
   };
 
   members.push(member);
-  writeDemoMembers(members);
+  writeDemoMembers(orgId, members);
   return member;
 }
 
-export function removeDemoMember(id: string): void {
-  const next = getDemoMembers().filter((m) => m.id !== id);
-  writeDemoMembers(next);
+export function removeDemoMember(orgId: number, id: string): void {
+  const next = getDemoMembers(orgId).filter((m) => m.id !== id);
+  writeDemoMembers(orgId, next);
 }
 
-export function clearDemoMembers(): void {
-  writeDemoMembers([]);
+export function clearDemoMembers(orgId: number): void {
+  writeDemoMembers(orgId, []);
 }
 
-export function getDemoCommitments(): string[] {
-  return getDemoMembers().map((m) => m.commitment);
+export function getDemoCommitments(orgId = 0): string[] {
+  return getDemoMembers(orgId).map((m) => m.commitment);
 }
 
-export function findDemoMemberById(id: string): DemoMember | undefined {
-  return getDemoMembers().find((m) => m.id === id);
+export function findDemoMemberById(orgId: number, id: string): DemoMember | undefined {
+  return getDemoMembers(orgId).find((m) => m.id === id);
 }

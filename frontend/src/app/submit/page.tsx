@@ -6,7 +6,7 @@ import {
 import { createPublicClient, http } from "viem";
 import { hardhat, sepolia } from "viem/chains";
 import { REGISTRY_ABI, REGISTRY_ADDRESS, CATEGORIES } from "@/lib/contracts";
-import { relaySubmitReport } from "@/lib/relayer";
+import { relaySubmitReportForOrg } from "@/lib/relayer";
 import { initPoseidon } from "@/lib/poseidon";
 import { buildMerkleTree } from "@/lib/merkle";
 import { generateZKProof, type FormattedProof } from "@/lib/zkProof";
@@ -15,6 +15,7 @@ import { encryptReport } from "@/lib/encryption";
 import { uploadEncryptedReport } from "@/lib/ipfs";
 import { getDemoMembers, type DemoMember } from "@/lib/demoOrg";
 import { getCurrentEpoch, formatEpochRange } from "@/lib/epoch";
+import { useOrg } from "@/providers/OrgProvider";
 
 const SUBMIT_REPORT_GAS_LIMIT = 12_000_000n;
 const APP_NETWORK = process.env.NEXT_PUBLIC_NETWORK_NAME?.toLowerCase();
@@ -68,6 +69,7 @@ function Step({
 }
 
 export default function SubmitPage() {
+  const { selectedOrgId } = useOrg();
   const [keyFileJson, setKeyFileJson] = useState("");
   const [keyFilePassword, setKeyFilePassword] = useState("");
   const [keyImportStatus, setKeyImportStatus] = useState<
@@ -105,19 +107,19 @@ export default function SubmitPage() {
     setProofLog((l) => [...l, `${new Date().toLocaleTimeString()} ${msg}`]);
 
   useEffect(() => {
-    const members = getDemoMembers();
+    const members = getDemoMembers(selectedOrgId);
     setDemoMembers(members);
     if (members.length && !selectedDemoId) {
       setSelectedDemoId(members[0].id);
     }
-  }, [selectedDemoId]);
+  }, [selectedDemoId, selectedOrgId]);
 
   useEffect(() => {
     setExternalNullifier(getCurrentEpoch().toString());
   }, []);
 
   const handleLoadDemoContext = useCallback(() => {
-    const members = getDemoMembers();
+    const members = getDemoMembers(selectedOrgId);
     setDemoMembers(members);
     setDemoLoadMessage("");
 
@@ -137,7 +139,7 @@ export default function SubmitPage() {
     setDemoLoadMessage(
       `Loaded ${members.length} demo commitments. Selected member ${selected.id} at index ${idx}.`
     );
-  }, [selectedDemoId]);
+  }, [selectedDemoId, selectedOrgId]);
 
   const handleKeyFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -268,6 +270,7 @@ export default function SubmitPage() {
     const encoded = new TextEncoder().encode(encryptedCID);
     const cidHex = `0x${Array.from(encoded).map(b => b.toString(16).padStart(2, '0')).join('')}`;
     const submitArgs = [
+      BigInt(selectedOrgId),
       proof.pA,
       proof.pB,
       proof.pC,
@@ -282,8 +285,8 @@ export default function SubmitPage() {
       const rootActive = await appPublicClient.readContract({
         address: REGISTRY_ADDRESS,
         abi: REGISTRY_ABI,
-        functionName: "roots",
-        args: [proof.root],
+        functionName: "orgRoots",
+        args: [BigInt(selectedOrgId), proof.root],
       });
       if (!rootActive) {
         setSubmitError(mapContractError("UnknownMerkleRoot"));
@@ -293,8 +296,8 @@ export default function SubmitPage() {
       const nullifierUsed = await appPublicClient.readContract({
         address: REGISTRY_ADDRESS,
         abi: REGISTRY_ABI,
-        functionName: "usedNullifiers",
-        args: [proof.nullifierHash],
+        functionName: "orgUsedNullifiers",
+        args: [BigInt(selectedOrgId), proof.nullifierHash],
       });
       if (nullifierUsed) {
         setSubmitError(mapContractError("NullifierAlreadyUsed"));
@@ -330,11 +333,12 @@ export default function SubmitPage() {
       await appPublicClient.simulateContract({
         address: REGISTRY_ADDRESS,
         abi: REGISTRY_ABI,
-        functionName: "submitReport",
+        functionName: "submitReportForOrg",
         args: submitArgs,
       });
 
-      const { txHash } = await relaySubmitReport({
+      const { txHash } = await relaySubmitReportForOrg({
+        orgId: String(selectedOrgId),
         pA: [proof.pA[0].toString(), proof.pA[1].toString()],
         pB: [
           [proof.pB[0][0].toString(), proof.pB[0][1].toString()],
@@ -376,6 +380,9 @@ export default function SubmitPage() {
             Proof generation runs entirely in your browser
           </p>
         </div>
+        <p className="text-slate-500 text-xs font-mono tracking-tight mt-2">
+          Active org: {selectedOrgId}
+        </p>
       </div>
 
       <div className="flex gap-8">
@@ -455,6 +462,9 @@ export default function SubmitPage() {
               <p className="text-[10px] font-mono text-slate-600">
                 Pull members saved in this browser. This auto-fills secret,
                 leaf index, and the organisation commitments list.
+              </p>
+              <p className="text-[10px] font-mono text-slate-500">
+                Source org: {selectedOrgId}
               </p>
 
               <div className="flex gap-2">
@@ -741,7 +751,7 @@ export default function SubmitPage() {
           {submitSuccess && (
             <p className="bg-green-900/30 border border-green-500/30 p-3 text-xs text-green-400">
               Report submitted successfully! The contract verified your ZK
-              proof and stored the report.
+              proof and stored the report for org {selectedOrgId}.
             </p>
           )}
           {submitError && (

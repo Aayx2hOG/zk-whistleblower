@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useOrg } from "@/providers/OrgProvider";
 
 export default function Navbar() {
+  const { selectedOrgId } = useOrg();
+
   return (
     <header className="flex items-center justify-between border-b border-white/10 px-6 py-4 md:px-12 bg-primary">
       {/* Logo */}
@@ -23,7 +26,7 @@ export default function Navbar() {
 
 
         <span className="hidden sm:inline text-[10px] font-mono uppercase tracking-widest text-slate-300 border border-white/20 px-3 py-2">
-          Relayer Mode
+          ORG {selectedOrgId} // Relayer Mode
         </span>
       </div>
     </header>

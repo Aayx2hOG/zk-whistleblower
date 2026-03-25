@@ -7,10 +7,28 @@ export interface RelayResponse {
 
 type RelayRequest =
     | { action: "addRoot"; payload: { root: string } }
+    | { action: "addRootForOrg"; payload: { orgId: string; root: string } }
     | { action: "revokeRoot"; payload: { root: string } }
+    | { action: "revokeRootForOrg"; payload: { orgId: string; root: string } }
+    | { action: "createOrganization"; payload: { orgId: string; name: string } }
+    | { action: "setOrganizationActive"; payload: { orgId: string; active: boolean } }
     | {
         action: "submitReport";
         payload: {
+            pA: [string, string];
+            pB: [[string, string], [string, string]];
+            pC: [string, string];
+            root: string;
+            nullifierHash: string;
+            externalNullifier: string;
+            encryptedCIDHex: `0x${string}`;
+            category: number;
+        };
+    }
+    | {
+        action: "submitReportForOrg";
+        payload: {
+            orgId: string;
             pA: [string, string];
             pB: [[string, string], [string, string]];
             pC: [string, string];
@@ -53,12 +71,34 @@ export function relayAddRoot(root: string) {
     return relayTx({ action: "addRoot", payload: { root } });
 }
 
+export function relayAddRootForOrg(orgId: number, root: string) {
+    return relayTx({ action: "addRootForOrg", payload: { orgId: String(orgId), root } });
+}
+
 export function relayRevokeRoot(root: string) {
     return relayTx({ action: "revokeRoot", payload: { root } });
+}
+
+export function relayRevokeRootForOrg(orgId: number, root: string) {
+    return relayTx({ action: "revokeRootForOrg", payload: { orgId: String(orgId), root } });
+}
+
+export function relayCreateOrganization(orgId: number, name: string) {
+    return relayTx({ action: "createOrganization", payload: { orgId: String(orgId), name } });
+}
+
+export function relaySetOrganizationActive(orgId: number, active: boolean) {
+    return relayTx({ action: "setOrganizationActive", payload: { orgId: String(orgId), active } });
 }
 
 export function relaySubmitReport(
     payload: Extract<RelayRequest, { action: "submitReport" }>['payload']
 ) {
     return relayTx({ action: "submitReport", payload });
+}
+
+export function relaySubmitReportForOrg(
+    payload: Extract<RelayRequest, { action: "submitReportForOrg" }>['payload']
+) {
+    return relayTx({ action: "submitReportForOrg", payload });
 }
