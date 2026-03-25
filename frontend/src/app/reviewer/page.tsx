@@ -7,8 +7,6 @@ import {
   useWatchContractEvent,
 } from "wagmi";
 import { REGISTRY_ABI, REGISTRY_ADDRESS, CATEGORIES } from "@/lib/contracts";
-import { decryptReport } from "@/lib/encryption";
-import { fetchFromIPFS } from "@/lib/ipfs";
 import { useOrg } from "@/providers/OrgProvider";
 
 // types
@@ -60,11 +58,17 @@ function CategoryBadge({ category }: { category: number }) {
   );
 }
 
+function mapDecryptError(message: string): string {
+  if (message.includes("legacy password encryption") || message.includes("v1")) {
+    return "This report was encrypted with legacy password mode (v1). It cannot be decrypted with org key-pair mode. Ask for legacy password only for this historical report, or re-submit using v2 key-pair encryption.";
+  }
+  return message;
+}
+
 //report card
-function ReportCard({ report }: { report: Report }) {
+function ReportCard({ report, orgId }: { report: Report; orgId: number }) {
   const date = new Date(Number(report.timestamp) * 1000).toLocaleString();
 
-  const [password, setPassword] = useState("");
   const [decryptStatus, setDecryptStatus] = useState<"idle" | "working" | "done" | "error">("idle");
   const [decryptedText, setDecryptedText] = useState("");
   const [decryptError, setDecryptError] = useState("");
@@ -73,15 +77,26 @@ function ReportCard({ report }: { report: Report }) {
     setDecryptError("");
     setDecryptStatus("working");
     try {
-      const blob = await fetchFromIPFS(report.encryptedCID);
-      const plaintext = await decryptReport(blob, password);
+      const res = await fetch("/api/decrypt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cid: report.encryptedCID, orgId }),
+      });
+
+      const data = (await res.json().catch(() => ({}))) as { plaintext?: string; error?: string };
+      if (!res.ok || typeof data.plaintext !== "string") {
+        throw new Error(data.error || `Decrypt failed (${res.status})`);
+      }
+
+      const plaintext = data.plaintext;
       setDecryptedText(plaintext);
       setDecryptStatus("done");
     } catch (e: unknown) {
-      setDecryptError(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      setDecryptError(mapDecryptError(message));
       setDecryptStatus("error");
     }
-  }, [report.encryptedCID, password]);
+  }, [report.encryptedCID, orgId]);
 
   return (
     <div className="card space-y-3">
@@ -113,23 +128,13 @@ function ReportCard({ report }: { report: Report }) {
       {/* Decrypt panel */}
       <div className="border-t border-white/10 pt-3 space-y-2">
         <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Decrypt report</p>
-        <div className="flex gap-2">
-          <input
-            className="input font-mono text-xs py-2 flex-1"
-            type="password"
-            placeholder="Reviewer password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={decryptStatus === "working" || decryptStatus === "done"}
-          />
-          <button
-            className="btn-ghost text-xs px-4 py-2 shrink-0"
-            onClick={handleDecrypt}
-            disabled={!password || decryptStatus === "working" || decryptStatus === "done"}
-          >
-            {decryptStatus === "working" ? "Decrypting…" : decryptStatus === "done" ? "Decrypted ✓" : "Decrypt"}
-          </button>
-        </div>
+        <button
+          className="btn-ghost text-xs px-4 py-2 shrink-0"
+          onClick={handleDecrypt}
+          disabled={decryptStatus === "working" || decryptStatus === "done"}
+        >
+          {decryptStatus === "working" ? "Decrypting…" : decryptStatus === "done" ? "Decrypted ✓" : "Decrypt"}
+        </button>
         {decryptStatus === "done" && (
           <div className="bg-black/40 border border-green-500/30 p-3 text-xs font-mono text-green-300 whitespace-pre-wrap break-words">
             {decryptedText}
@@ -334,7 +339,7 @@ export default function ReviewerPage() {
 
       <div className="space-y-4">
         {[...reports].reverse().map((r) => (
-          <ReportCard key={r.id.toString()} report={r} />
+          <ReportCard key={r.id.toString()} report={r} orgId={selectedOrgId} />
         ))}
       </div>
 

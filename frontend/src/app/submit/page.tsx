@@ -11,11 +11,12 @@ import { initPoseidon } from "@/lib/poseidon";
 import { buildMerkleTree } from "@/lib/merkle";
 import { generateZKProof, type FormattedProof } from "@/lib/zkProof";
 import { decryptSecret, type MemberKeyFile } from "@/lib/secretGen";
-import { encryptReport } from "@/lib/encryption";
+import { encryptReportForOrgPublicKey } from "@/lib/encryption";
 import { uploadEncryptedReport } from "@/lib/ipfs";
 import { getDemoMembers, type DemoMember } from "@/lib/demoOrg";
 import { getCurrentEpoch, formatEpochRange } from "@/lib/epoch";
 import { useOrg } from "@/providers/OrgProvider";
+import { getOrgPublicKeyConfig } from "@/lib/orgKeys";
 
 const SUBMIT_REPORT_GAS_LIMIT = 12_000_000n;
 const APP_NETWORK = process.env.NEXT_PUBLIC_NETWORK_NAME?.toLowerCase();
@@ -88,7 +89,6 @@ export default function SubmitPage() {
   const [category, setCategory] = useState<0 | 1 | 2 | 3>(0);
 
   const [reportText, setReportText] = useState("");
-  const [encryptionPassword, setEncryptionPassword] = useState("");
   const [uploadStatus, setUploadStatus] = useState<"idle" | "working" | "done" | "error">("idle");
   const [uploadError, setUploadError] = useState("");
 
@@ -171,7 +171,8 @@ export default function SubmitPage() {
     setUploadError("");
     setUploadStatus("working");
     try {
-      const blob = await encryptReport(reportText, encryptionPassword);
+      const { keyB64, keyVersion } = getOrgPublicKeyConfig(selectedOrgId);
+      const blob = await encryptReportForOrgPublicKey(reportText, selectedOrgId, keyB64, keyVersion);
       const cid = await uploadEncryptedReport(blob);
       setEncryptedCID(cid);
       setUploadStatus("done");
@@ -179,7 +180,7 @@ export default function SubmitPage() {
       setUploadError(e instanceof Error ? e.message : String(e));
       setUploadStatus("error");
     }
-  }, [reportText, encryptionPassword]);
+  }, [reportText, selectedOrgId]);
 
   const handleGenerateProof = useCallback(async () => {
     setProofError("");
@@ -581,24 +582,20 @@ export default function SubmitPage() {
               />
             </div>
             <div>
-              <label className="label">Reviewer encryption password</label>
-              <input
-                className="input font-mono text-sm"
-                type="password"
-                placeholder="Share this with your trusted reviewer"
-                value={encryptionPassword}
-                onChange={(e) => setEncryptionPassword(e.target.value)}
-                disabled={proofStatus === "generating" || uploadStatus === "working"}
-              />
+              <label className="label">Encryption mode</label>
+              <div className="input font-mono text-xs py-3 text-slate-400">
+                Organization public-key encryption (no shared password)
+              </div>
               <p className="mt-1 text-[10px] font-mono text-slate-600">
-                Your report is AES-256-GCM encrypted in-browser — the server only sees ciphertext.
+                Your report is encrypted in-browser with the org public key.
+                Only reviewers with org private key can decrypt.
               </p>
             </div>
             <button
               className="btn-ghost text-xs px-4 py-2"
               onClick={handleEncryptAndUpload}
               disabled={
-                !reportText || !encryptionPassword ||
+                !reportText ||
                 uploadStatus === "working" || uploadStatus === "done" ||
                 proofStatus === "generating"
               }
