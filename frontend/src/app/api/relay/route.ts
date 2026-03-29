@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPublicClient, createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { sepolia } from "viem/chains";
+import { hardhat, sepolia } from "viem/chains";
 import { REGISTRY_ABI, REGISTRY_ADDRESS } from "@/lib/contracts";
 
 export const runtime = "nodejs";
@@ -27,11 +27,26 @@ function readConfig() {
     const rpcUrl = process.env.RELAYER_RPC_URL || process.env.SEPOLIA_RPC_URL;
     const privateKey = process.env.RELAYER_PRIVATE_KEY || process.env.SEPOLIA_PRIVATE_KEY;
 
-    if (!rpcUrl) throw new Error("Missing RELAYER_RPC_URL (or SEPOLIA_RPC_URL)");
-    if (!privateKey) throw new Error("Missing RELAYER_PRIVATE_KEY (or SEPOLIA_PRIVATE_KEY)");
+    if (!rpcUrl) throw new Error("Missing RELAYER_RPC_URL");
+    if (!privateKey) throw new Error("Missing RELAYER_PRIVATE_KEY");
 
     const normalizedKey = privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
     return { rpcUrl, privateKey: normalizedKey as `0x${string}` };
+}
+
+function readChain() {
+    const chainIdRaw = process.env.RELAYER_CHAIN_ID?.trim();
+    const networkRaw = process.env.NEXT_PUBLIC_NETWORK_NAME?.trim().toLowerCase();
+
+    if (chainIdRaw) {
+        const chainId = Number(chainIdRaw);
+        if (chainId === hardhat.id) return hardhat;
+        if (chainId === sepolia.id) return sepolia;
+        throw new Error(`Unsupported RELAYER_CHAIN_ID: ${chainIdRaw}. Use ${hardhat.id} (hardhat) or ${sepolia.id} (sepolia).`);
+    }
+
+    if (networkRaw === "sepolia") return sepolia;
+    return hardhat;
 }
 
 async function ensureOrganizationApisAvailable(publicClient: ReturnType<typeof createPublicClient>) {
@@ -62,8 +77,9 @@ export async function POST(req: NextRequest) {
         }
 
         const account = privateKeyToAccount(privateKey);
-        const walletClient = createWalletClient({ account, chain: sepolia, transport: http(rpcUrl) });
-        const publicClient = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
+        const chain = readChain();
+        const walletClient = createWalletClient({ account, chain, transport: http(rpcUrl) });
+        const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
 
         let txHash: `0x${string}`;
 

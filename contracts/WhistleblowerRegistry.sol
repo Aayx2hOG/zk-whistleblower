@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 
 interface IGroth16Verifier {
     function verifyProof(
@@ -12,8 +12,9 @@ interface IGroth16Verifier {
     ) external view returns (bool);
 }
 
-contract WhistleblowerRegistry is Ownable {
+contract WhistleblowerRegistry is AccessControl {
     uint256 public constant DEFAULT_ORG_ID = 0;
+    bytes32 public constant SUPER_ADMIN_ROLE = DEFAULT_ADMIN_ROLE;
 
     error UnknownMerkleRoot();
     error NullifierAlreadyUsed();
@@ -25,6 +26,7 @@ contract WhistleblowerRegistry is Ownable {
     error OrganizationAlreadyExists();
     error OrganizationDoesNotExist();
     error OrganizationInactive();
+    error UnauthorizedOrgAdmin(uint256 orgId, address account);
 
     IGroth16Verifier public immutable verifier;
 
@@ -40,6 +42,7 @@ contract WhistleblowerRegistry is Ownable {
     mapping(uint256 => bool) public organizationExists;
     mapping(uint256 => mapping(uint256 => bool)) public orgRoots;
     mapping(uint256 => mapping(uint256 => bool)) public orgUsedNullifiers;
+    mapping(uint256 => mapping(address => bool)) public orgAdmins;
     mapping(uint256 => uint256[]) private orgReportIds;
     mapping(uint256 => uint256) public reportOrgId;
 
@@ -68,14 +71,41 @@ contract WhistleblowerRegistry is Ownable {
         uint8 category,
         uint256 timestamp
     );
-    event OrganizationCreated(uint256 indexed orgId, string name, uint256 timestamp);
-    event OrganizationStatusUpdated(uint256 indexed orgId, bool active, uint256 timestamp);
+    event OrganizationCreated(
+        uint256 indexed orgId,
+        string name,
+        uint256 timestamp
+    );
+    event OrganizationStatusUpdated(
+        uint256 indexed orgId,
+        bool active,
+        uint256 timestamp
+    );
+    event OrgAdminGranted(
+        uint256 indexed orgId,
+        address indexed account,
+        address indexed grantedBy
+    );
+    event OrgAdminRevoked(
+        uint256 indexed orgId,
+        address indexed account,
+        address indexed revokedBy
+    );
     event RootAdded(uint256 indexed root);
     event RootAddedForOrg(uint256 indexed orgId, uint256 indexed root);
     event RootRevoked(uint256 indexed root);
     event RootRevokedForOrg(uint256 indexed orgId, uint256 indexed root);
 
-    constructor(address _verifier) Ownable(msg.sender) {
+    modifier onlyOrgAdmin(uint256 _orgId) {
+        if (!isOrgAdmin(_orgId, msg.sender)) {
+            revert UnauthorizedOrgAdmin(_orgId, msg.sender);
+        }
+        _;
+    }
+
+    constructor(address _verifier) {
+        _grantRole(SUPER_ADMIN_ROLE, msg.sender);
+
         verifier = IGroth16Verifier(_verifier);
         organizationExists[DEFAULT_ORG_ID] = true;
         organizations[DEFAULT_ORG_ID] = Organization({
@@ -83,18 +113,60 @@ contract WhistleblowerRegistry is Ownable {
             active: true,
             createdAt: block.timestamp
         });
+        orgAdmins[DEFAULT_ORG_ID][msg.sender] = true;
+
         emit OrganizationCreated(DEFAULT_ORG_ID, "Default", block.timestamp);
+        emit OrgAdminGranted(DEFAULT_ORG_ID, msg.sender, msg.sender);
     }
 
-    function addRoot(uint256 _root) external onlyOwner {
+    function orgAdminRole(uint256 _orgId) public pure returns (bytes32) {
+        return keccak256(abi.encodePacked("ORG_ADMIN_ROLE", _orgId));
+    }
+
+    function isOrgAdmin(
+        uint256 _orgId,
+        address _account
+    ) public view returns (bool) {
+        return
+            hasRole(SUPER_ADMIN_ROLE, _account) || orgAdmins[_orgId][_account];
+    }
+
+    function grantOrgAdmin(
+        uint256 _orgId,
+        address _account
+    ) external onlyRole(SUPER_ADMIN_ROLE) {
+        if (!organizationExists[_orgId]) revert OrganizationDoesNotExist();
+
+        orgAdmins[_orgId][_account] = true;
+        _grantRole(orgAdminRole(_orgId), _account);
+
+        emit OrgAdminGranted(_orgId, _account, msg.sender);
+    }
+
+    function revokeOrgAdmin(
+        uint256 _orgId,
+        address _account
+    ) external onlyRole(SUPER_ADMIN_ROLE) {
+        if (!organizationExists[_orgId]) revert OrganizationDoesNotExist();
+
+        orgAdmins[_orgId][_account] = false;
+        _revokeRole(orgAdminRole(_orgId), _account);
+
+        emit OrgAdminRevoked(_orgId, _account, msg.sender);
+    }
+
+    function addRoot(uint256 _root) external onlyOrgAdmin(DEFAULT_ORG_ID) {
         addRootForOrg(DEFAULT_ORG_ID, _root);
     }
 
-    function revokeRoot(uint256 _root) external onlyOwner {
+    function revokeRoot(uint256 _root) external onlyOrgAdmin(DEFAULT_ORG_ID) {
         revokeRootForOrg(DEFAULT_ORG_ID, _root);
     }
 
-    function createOrganization(uint256 _orgId, string calldata _name) external onlyOwner {
+    function createOrganization(
+        uint256 _orgId,
+        string calldata _name
+    ) external onlyRole(SUPER_ADMIN_ROLE) {
         if (organizationExists[_orgId]) revert OrganizationAlreadyExists();
         organizationExists[_orgId] = true;
         organizations[_orgId] = Organization({
@@ -103,10 +175,17 @@ contract WhistleblowerRegistry is Ownable {
             createdAt: block.timestamp
         });
 
+        orgAdmins[_orgId][msg.sender] = true;
+        _grantRole(orgAdminRole(_orgId), msg.sender);
+
         emit OrganizationCreated(_orgId, _name, block.timestamp);
+        emit OrgAdminGranted(_orgId, msg.sender, msg.sender);
     }
 
-    function setOrganizationActive(uint256 _orgId, bool _active) external onlyOwner {
+    function setOrganizationActive(
+        uint256 _orgId,
+        bool _active
+    ) external onlyOrgAdmin(_orgId) {
         if (!organizationExists[_orgId]) revert OrganizationDoesNotExist();
         organizations[_orgId].active = _active;
         emit OrganizationStatusUpdated(_orgId, _active, block.timestamp);
@@ -119,7 +198,10 @@ contract WhistleblowerRegistry is Ownable {
         return organizations[_orgId];
     }
 
-    function addRootForOrg(uint256 _orgId, uint256 _root) public onlyOwner {
+    function addRootForOrg(
+        uint256 _orgId,
+        uint256 _root
+    ) public onlyOrgAdmin(_orgId) {
         if (!organizationExists[_orgId]) revert OrganizationDoesNotExist();
         if (!organizations[_orgId].active) revert OrganizationInactive();
         if (orgRoots[_orgId][_root]) revert RootAlreadyExists();
@@ -133,7 +215,10 @@ contract WhistleblowerRegistry is Ownable {
         emit RootAddedForOrg(_orgId, _root);
     }
 
-    function revokeRootForOrg(uint256 _orgId, uint256 _root) public onlyOwner {
+    function revokeRootForOrg(
+        uint256 _orgId,
+        uint256 _root
+    ) public onlyOrgAdmin(_orgId) {
         if (!organizationExists[_orgId]) revert OrganizationDoesNotExist();
         if (!orgRoots[_orgId][_root]) revert RootDoesNotExist();
 
@@ -184,12 +269,14 @@ contract WhistleblowerRegistry is Ownable {
         if (!organizationExists[_orgId]) revert OrganizationDoesNotExist();
         if (!organizations[_orgId].active) revert OrganizationInactive();
         if (!orgRoots[_orgId][_root]) revert UnknownMerkleRoot();
-        if (orgUsedNullifiers[_orgId][_nullifierHash]) revert NullifierAlreadyUsed();
+        if (orgUsedNullifiers[_orgId][_nullifierHash])
+            revert NullifierAlreadyUsed();
         if (_category > 3) revert InvalidCategory();
 
         // Expensive proof verification last (fail fast on invalid inputs)
         uint[3] memory pubSignals = [_root, _nullifierHash, _externalNullifier];
-        if (!verifier.verifyProof(_pA, _pB, _pC, pubSignals)) revert InvalidZKProof();
+        if (!verifier.verifyProof(_pA, _pB, _pC, pubSignals))
+            revert InvalidZKProof();
 
         orgUsedNullifiers[_orgId][_nullifierHash] = true;
         if (_orgId == DEFAULT_ORG_ID) {

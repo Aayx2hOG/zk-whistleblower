@@ -53,6 +53,7 @@ describe("WhistleblowerRegistry", function () {
     let registry: any;
     let owner: any;
     let nonOwner: any;
+    let superAdminRole: string;
 
     const secrets = [123456789n, 987654321n, 555555555n];
     let commitments: bigint[];
@@ -72,6 +73,8 @@ describe("WhistleblowerRegistry", function () {
         registry = await ethers.deployContract("WhistleblowerRegistry", [
             await verifier.getAddress(),
         ]);
+
+        superAdminRole = await registry.SUPER_ADMIN_ROLE();
 
         await registry.addRoot(tree.root);
     });
@@ -113,7 +116,25 @@ describe("WhistleblowerRegistry", function () {
         it("should reject non-owner organization actions", async function () {
             await expect(
                 registry.connect(nonOwner).createOrganization(2, "HR")
-            ).to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount");
+            )
+                .to.be.revertedWithCustomError(registry, "AccessControlUnauthorizedAccount")
+                .withArgs(nonOwner.address, superAdminRole);
+        });
+
+        it("should allow super-admin to grant org admin", async function () {
+            await registry.grantOrgAdmin(1, nonOwner.address);
+            expect(await registry.isOrgAdmin(1, nonOwner.address)).to.equal(true);
+        });
+
+        it("should allow granted org admin to manage that organization", async function () {
+            const orgRoot = 1234567n;
+            await expect(registry.connect(nonOwner).addRootForOrg(1, orgRoot))
+                .to.emit(registry, "RootAddedForOrg")
+                .withArgs(1, orgRoot);
+
+            await expect(registry.connect(nonOwner).revokeRootForOrg(1, orgRoot))
+                .to.emit(registry, "RootRevokedForOrg")
+                .withArgs(1, orgRoot);
         });
     });
 
@@ -146,7 +167,9 @@ describe("WhistleblowerRegistry", function () {
         it("should reject non-owner root management", async function () {
             await expect(
                 registry.connect(nonOwner).addRoot(11111n)
-            ).to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount");
+            )
+                .to.be.revertedWithCustomError(registry, "UnauthorizedOrgAdmin")
+                .withArgs(0n, nonOwner.address);
         });
     });
 

@@ -11,13 +11,19 @@ export const REGISTRY_ABI = [
   // errors 
   {
     type: "error",
-    name: "OwnableInvalidOwner",
-    inputs: [{ name: "owner", type: "address" }],
+    name: "AccessControlUnauthorizedAccount",
+    inputs: [
+      { name: "account", type: "address" },
+      { name: "neededRole", type: "bytes32" },
+    ],
   },
   {
     type: "error",
-    name: "OwnableUnauthorizedAccount",
-    inputs: [{ name: "account", type: "address" }],
+    name: "UnauthorizedOrgAdmin",
+    inputs: [
+      { name: "orgId", type: "uint256" },
+      { name: "account", type: "address" },
+    ],
   },
   {
     type: "error",
@@ -147,10 +153,20 @@ export const REGISTRY_ABI = [
   },
   {
     type: "function",
-    name: "owner",
+    name: "SUPER_ADMIN_ROLE",
     stateMutability: "view",
     inputs: [],
-    outputs: [{ type: "address" }],
+    outputs: [{ type: "bytes32" }],
+  },
+  {
+    type: "function",
+    name: "hasRole",
+    stateMutability: "view",
+    inputs: [
+      { name: "role", type: "bytes32" },
+      { name: "account", type: "address" },
+    ],
+    outputs: [{ type: "bool" }],
   },
   {
     type: "function",
@@ -197,6 +213,26 @@ export const REGISTRY_ABI = [
     inputs: [
       { name: "orgId", type: "uint256" },
       { name: "nullifierHash", type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "orgAdmins",
+    stateMutability: "view",
+    inputs: [
+      { name: "orgId", type: "uint256" },
+      { name: "account", type: "address" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "isOrgAdmin",
+    stateMutability: "view",
+    inputs: [
+      { name: "_orgId", type: "uint256" },
+      { name: "_account", type: "address" },
     ],
     outputs: [{ type: "bool" }],
   },
@@ -280,6 +316,26 @@ export const REGISTRY_ABI = [
     inputs: [
       { name: "_orgId", type: "uint256" },
       { name: "_name", type: "string" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "grantOrgAdmin",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "_orgId", type: "uint256" },
+      { name: "_account", type: "address" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "revokeOrgAdmin",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "_orgId", type: "uint256" },
+      { name: "_account", type: "address" },
     ],
     outputs: [],
   },
