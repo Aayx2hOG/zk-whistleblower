@@ -4,7 +4,7 @@ import { randomBytes, createCipheriv, pbkdf2Sync } from "crypto";
 import { writeFileSync, mkdirSync } from "fs";
 import { resolve } from "path";
 
-const { ethers } = await network.connect();
+
 
 const TREE_DEPTH = 10;
 const KEYS_DIR = resolve(import.meta.dirname, "../keys");
@@ -64,6 +64,7 @@ function generateSecret(): bigint {
 }
 
 async function main() {
+    const { ethers } = (await network.connect()) as any;
     await initPoseidon();
 
     const members = [
