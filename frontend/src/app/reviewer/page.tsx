@@ -1,5 +1,7 @@
 "use client";
 
+import Icon from "@/components/Icon";
+
 import { useCallback, useEffect, useState } from "react";
 import {
   useReadContract,
@@ -332,7 +334,7 @@ export default function ReviewerPage() {
 
       {!loading && reports.length === 0 && !error && (
         <div className="card text-center text-slate-500">
-          <span className="material-symbols-outlined text-4xl text-white/20 mb-4 block">inbox</span>
+          <Icon name="inbox" className="text-4xl text-white/20 mb-4 block" />
           No reports submitted yet. Be the first whistleblower.
         </div>
       )}

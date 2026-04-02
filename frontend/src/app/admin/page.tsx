@@ -5,6 +5,7 @@ import {
   useWaitForTransactionReceipt,
   useWatchContractEvent,
 } from "wagmi";
+import Icon from "@/components/Icon";
 import { REGISTRY_ABI, REGISTRY_ADDRESS } from "@/lib/contracts";
 import {
   relayAddRootForOrg,
@@ -363,7 +364,7 @@ export default function AdminPage() {
             <p className="step-label">00_ORGANIZATIONS</p>
             <h2 className="section-heading">Organization Management</h2>
           </div>
-          <span className="material-symbols-outlined text-white/20">apartment</span>
+          <Icon name="apartment" className="text-white/20 text-2xl" />
         </div>
 
         <div className="grid gap-6 md:grid-cols-2">
@@ -420,7 +421,7 @@ export default function AdminPage() {
             <p className="step-label">01_MEMBER_REGISTRATION</p>
             <h2 className="section-heading">Generate Member Secrets</h2>
           </div>
-          <span className="material-symbols-outlined text-white/20">group_add</span>
+          <Icon name="group_add" className="text-white/20 text-2xl" />
         </div>
         <p className="text-xs text-slate-500 font-mono">
           Add member IDs and optional passwords. A random cryptographic secret
@@ -564,7 +565,7 @@ export default function AdminPage() {
             <p className="step-label">02_REGISTRATION</p>
             <h2 className="section-heading">Register Root On-Chain</h2>
           </div>
-          <span className="material-symbols-outlined text-white/20">add_circle</span>
+          <Icon name="add_circle" className="text-white/20 text-2xl" />
         </div>
         <div>
           <label className="label">Merkle root (decimal)</label>
@@ -598,7 +599,7 @@ export default function AdminPage() {
             <p className="step-label">03_REVOCATION</p>
             <h2 className="section-heading">Revoke A Root</h2>
           </div>
-          <span className="material-symbols-outlined text-white/20">delete_forever</span>
+          <Icon name="delete_forever" className="text-white/20 text-2xl" />
         </div>
         <div>
           <label className="label">Root to revoke (decimal)</label>
@@ -633,7 +634,7 @@ export default function AdminPage() {
               <p className="step-label">LIVE_FEED</p>
               <h2 className="section-heading">Root Events</h2>
             </div>
-            <span className="material-symbols-outlined text-white/20">monitoring</span>
+            <Icon name="monitoring" className="text-white/20 text-2xl" />
           </div>
           <ul className="space-y-2">
             {events

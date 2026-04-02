@@ -17,8 +17,8 @@ const config: Config = {
         },
       },
       fontFamily: {
-        display: ["Inter", "sans-serif"],
-        mono: ["JetBrains Mono", "monospace"],
+        display: ["var(--font-inter)", "Inter", "sans-serif"],
+        mono: ["var(--font-jetbrains)", "JetBrains Mono", "monospace"],
       },
       borderRadius: {
         DEFAULT: "0px",

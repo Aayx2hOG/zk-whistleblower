@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import Icon from "@/components/Icon";
 import {
 } from "wagmi";
 import { createPublicClient, http } from "viem";
@@ -398,7 +399,7 @@ export default function SubmitPage() {
             <p className="step-label">01_INITIATION</p>
             <h2 className="section-heading">Membership Verification</h2>
           </div>
-          <span className="material-symbols-outlined text-white/20">verified_user</span>
+          <Icon name="verified_user" className="text-white/20 text-2xl" />
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2">
@@ -566,7 +567,7 @@ export default function SubmitPage() {
             <p className="step-label">02_EVIDENCE_PAYLOAD</p>
             <h2 className="section-heading">Report Details</h2>
           </div>
-          <span className="material-symbols-outlined text-white/20">article</span>
+          <Icon name="article" className="text-white/20 text-2xl" />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -692,7 +693,7 @@ export default function SubmitPage() {
               <p className="step-label">03_VERIFICATION</p>
               <h2 className="section-heading">Proof Summary</h2>
             </div>
-            <span className="material-symbols-outlined text-white/20">verified</span>
+            <Icon name="verified" className="text-white/20 text-2xl" />
           </div>
 
           <div className="space-y-2 font-mono text-xs text-slate-400">
@@ -723,7 +724,7 @@ export default function SubmitPage() {
                     ? "SUBMITTED ✓"
                     : "SUBMIT TO BLOCKCHAIN"}
               </span>
-              <span className="material-symbols-outlined">database</span>
+              <Icon name="database" className="text-2xl" />
             </button>
             <p className="mt-4 text-center text-[10px] font-mono text-slate-500 uppercase tracking-widest">
               Warning: This action is irreversible once broadcast to the network.
@@ -733,7 +734,7 @@ export default function SubmitPage() {
           {submittedTxHash && (
             <div className="bg-white p-4 border-l-4 border-green-500 flex items-center gap-4">
               <div className="size-10 bg-black flex items-center justify-center">
-                <span className="material-symbols-outlined text-white text-sm">check_circle</span>
+                <Icon name="check_circle" className="text-white text-sm" />
               </div>
               <div>
                 <p className="text-black font-black text-xs uppercase tracking-tight leading-none mb-1">

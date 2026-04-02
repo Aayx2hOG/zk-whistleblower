@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Icon from "@/components/Icon";
 
 const CARDS = [
   {
@@ -64,7 +65,7 @@ export default function HomePage() {
             <p className="step-label">PROTOCOL_OVERVIEW</p>
             <h2 className="section-heading">How It Works</h2>
           </div>
-          <span className="material-symbols-outlined text-white/20">info</span>
+          <Icon name="info" className="text-white/20 text-2xl" />
         </div>
         <ol className="space-y-3 text-sm text-slate-400">
           <li className="flex gap-3">
@@ -96,9 +97,7 @@ export default function HomePage() {
           >
             <div className="flex justify-between items-start">
               <p className="text-[10px] font-mono text-white/40">{step}_MODULE</p>
-              <span className="material-symbols-outlined text-white/20 group-hover:text-white/40 transition-colors">
-                {icon}
-              </span>
+              <Icon name={icon} className="text-white/20 group-hover:text-white/40 transition-colors text-2xl" />
             </div>
             <div>
               <h3 className="font-black text-white uppercase text-lg">{title}</h3>

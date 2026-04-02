@@ -1,9 +1,25 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import Providers from "@/providers/WagmiProvider";
 import { OrgProvider } from "@/providers/OrgProvider";
 import Navbar from "@/components/Navbar";
 import Sidebar from "@/components/Sidebar";
+
+// Self-hosted via next/font — zero external network requests, no render-blocking
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800", "900"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  variable: "--font-jetbrains",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "ZK Whistleblower",
@@ -17,17 +33,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <head>
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap"
-          rel="stylesheet"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html lang="en" className={`dark ${inter.variable} ${jetbrainsMono.variable}`}>
       <body className="min-h-screen antialiased bg-background-dark text-slate-100 font-display selection:bg-white selection:text-black bg-grid">
         <Providers>
           <OrgProvider>

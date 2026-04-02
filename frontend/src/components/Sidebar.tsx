@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useOrg } from "@/providers/OrgProvider";
+import Icon from "@/components/Icon";
 
 const NAV_ITEMS = [
   { href: "/", icon: "grid_view", label: "Portal" },
@@ -73,9 +74,7 @@ export default function Sidebar() {
                     : "text-slate-400 hover:text-white"
                 }`}
               >
-                <span className="material-symbols-outlined text-[18px]">
-                  {icon}
-                </span>
+                <Icon name={icon} className="text-[18px]" />
                 <span>{label}</span>
               </Link>
             );
