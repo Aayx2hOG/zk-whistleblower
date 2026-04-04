@@ -20,6 +20,14 @@ export default function Sidebar() {
   const { selectedOrgId, knownOrgIds, setSelectedOrgId } = useOrg();
   const [manualOrgId, setManualOrgId] = useState(String(selectedOrgId));
 
+  const networkName = process.env.NEXT_PUBLIC_NETWORK_NAME?.toLowerCase();
+  const networkLabel =
+    networkName === "sepolia"
+      ? "Sepolia — Chain 11155111"
+      : networkName === "mainnet"
+        ? "Ethereum — Chain 1"
+        : "Local Hardhat — Chain 31337";
+
   const applyManualOrg = () => {
     const parsed = Number(manualOrgId);
     if (!Number.isFinite(parsed) || parsed < 0) return;
@@ -88,7 +96,7 @@ export default function Sidebar() {
             NETWORK_INFO
           </p>
           <p className="text-[10px] font-mono text-slate-200">
-            Local Hardhat — Chain 31337
+            {networkLabel}
           </p>
         </div>
       </div>
