@@ -5,6 +5,12 @@ import {
   type PublicKeyEncryptedBlob,
 } from "@/lib/encryption";
 import { getOrgPrivateKeyConfig } from "@/lib/orgKeys";
+import {
+  decryptFile,
+  isReportManifest,
+  type EncryptedFileBlob,
+  type ReportManifest,
+} from "@/lib/fileEncryption";
 
 export const runtime = "nodejs";
 
@@ -22,6 +28,10 @@ function normalizeCid(input: string): string {
   }
 }
 
+function validateCid(cid: string): boolean {
+  return /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{58,})$/.test(cid);
+}
+
 function isV2Blob(blob: EncryptedBlob): blob is PublicKeyEncryptedBlob {
   return (
     (blob as PublicKeyEncryptedBlob).v === 2 &&
@@ -29,6 +39,23 @@ function isV2Blob(blob: EncryptedBlob): blob is PublicKeyEncryptedBlob {
     typeof (blob as PublicKeyEncryptedBlob).ciphertext === "string" &&
     typeof (blob as PublicKeyEncryptedBlob).nonce === "string"
   );
+}
+
+function isFileBlob(blob: unknown): blob is EncryptedFileBlob {
+  return (
+    typeof blob === "object" &&
+    blob !== null &&
+    (blob as EncryptedFileBlob).type === "file" &&
+    (blob as EncryptedFileBlob).v === 2
+  );
+}
+
+async function fetchIPFS<T = unknown>(cid: string): Promise<T> {
+  const res = await fetch(`https://gateway.pinata.cloud/ipfs/${cid}`);
+  if (!res.ok) {
+    throw new Error(`IPFS fetch failed (${res.status}): ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
 }
 
 export async function POST(req: NextRequest) {
@@ -45,7 +72,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const body = (await req.json()) as { cid?: string; orgId?: number };
+    const body = (await req.json()) as {
+      cid?: string;
+      orgId?: number;
+      fileIndex?: number; // optional: decrypt a specific file from a manifest
+    };
     if (typeof body.cid !== "string" || !body.cid.trim()) {
       return NextResponse.json({ error: "Missing CID" }, { status: 400 });
     }
@@ -56,19 +87,69 @@ export async function POST(req: NextRequest) {
     }
 
     const cid = normalizeCid(body.cid);
-    if (!/^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{58,})$/.test(cid)) {
+    if (!validateCid(cid)) {
       return NextResponse.json({ error: "Invalid CID format" }, { status: 400 });
     }
 
-    const ipfsRes = await fetch(`https://gateway.pinata.cloud/ipfs/${cid}`);
-    if (!ipfsRes.ok) {
-      return NextResponse.json(
-        { error: `IPFS fetch failed (${ipfsRes.status}): ${ipfsRes.statusText}` },
-        { status: 502 }
-      );
+    const ipfsData = await fetchIPFS<unknown>(cid);
+    const { keyB64 } = getOrgPrivateKeyConfig(orgId);
+
+    // Case 1: It's a manifest with text + file attachments
+    if (isReportManifest(ipfsData)) {
+      const manifest = ipfsData as ReportManifest;
+
+      // If a specific file index is requested, decrypt that file
+      if (typeof body.fileIndex === "number") {
+        const fi = body.fileIndex;
+        if (fi < 0 || fi >= manifest.files.length) {
+          return NextResponse.json({ error: "File index out of range" }, { status: 400 });
+        }
+        const fileMeta = manifest.files[fi];
+        const encryptedFile = await fetchIPFS<EncryptedFileBlob>(fileMeta.cid);
+        if (!isFileBlob(encryptedFile)) {
+          return NextResponse.json({ error: "File CID did not resolve to an encrypted file blob" }, { status: 400 });
+        }
+        const { data, filename, mimeType } = await decryptFile(encryptedFile, keyB64);
+        // Return file as base64 since Next.js API routes work best with JSON
+        const base64 = Buffer.from(data).toString("base64");
+        return NextResponse.json({ filename, mimeType, base64 });
+      }
+
+      // Otherwise decrypt the text report and return manifest metadata
+      const textCid = normalizeCid(manifest.textCid);
+      if (!validateCid(textCid)) {
+        return NextResponse.json({ error: "Invalid text CID in manifest" }, { status: 400 });
+      }
+      const textBlob = await fetchIPFS<EncryptedBlob>(textCid);
+      if (!isV2Blob(textBlob)) {
+        return NextResponse.json(
+          { error: "Text report uses legacy v1 encryption, cannot decrypt with org key." },
+          { status: 400 }
+        );
+      }
+      const plaintext = await decryptReportWithOrgPrivateKey(textBlob, keyB64);
+
+      return NextResponse.json({
+        plaintext,
+        manifest: true,
+        files: manifest.files.map((f, i) => ({
+          index: i,
+          filename: f.filename,
+          mimeType: f.mimeType,
+          originalSize: f.originalSize,
+        })),
+      });
     }
 
-    const blob = (await ipfsRes.json()) as EncryptedBlob;
+    // Case 2: It's a direct encrypted file blob
+    if (isFileBlob(ipfsData)) {
+      const { data, filename, mimeType } = await decryptFile(ipfsData as EncryptedFileBlob, keyB64);
+      const base64 = Buffer.from(data).toString("base64");
+      return NextResponse.json({ filename, mimeType, base64 });
+    }
+
+    // Case 3: It's a regular v2 text report (no manifest)
+    const blob = ipfsData as EncryptedBlob;
     if (!isV2Blob(blob)) {
       return NextResponse.json(
         {
@@ -79,7 +160,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { keyB64 } = getOrgPrivateKeyConfig(orgId);
     const plaintext = await decryptReportWithOrgPrivateKey(blob, keyB64);
     return NextResponse.json({ plaintext });
   } catch (error) {

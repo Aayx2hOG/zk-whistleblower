@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import Icon from "@/components/Icon";
 import {
 } from "wagmi";
@@ -13,11 +13,15 @@ import { buildMerkleTree } from "@/lib/merkle";
 import { generateZKProof, type FormattedProof } from "@/lib/zkProof";
 import { decryptSecret, type MemberKeyFile } from "@/lib/secretGen";
 import { encryptReportForOrgPublicKey } from "@/lib/encryption";
-import { uploadEncryptedReport } from "@/lib/ipfs";
+import { uploadEncryptedReport, uploadEncryptedFile, uploadManifest } from "@/lib/ipfs";
+import { encryptFile, type ReportManifest } from "@/lib/fileEncryption";
 import { getDemoMembers, type DemoMember } from "@/lib/demoOrg";
 import { getCurrentEpoch, formatEpochRange } from "@/lib/epoch";
 import { useOrg } from "@/providers/OrgProvider";
 import { getOrgPublicKeyConfig } from "@/lib/orgKeys";
+
+const MAX_FILES = 5;
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 const SUBMIT_REPORT_GAS_LIMIT = 12_000_000n;
 const APP_NETWORK = process.env.NEXT_PUBLIC_NETWORK_NAME?.toLowerCase();
@@ -90,8 +94,11 @@ export default function SubmitPage() {
   const [category, setCategory] = useState<0 | 1 | 2 | 3>(0);
 
   const [reportText, setReportText] = useState("");
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [uploadStatus, setUploadStatus] = useState<"idle" | "working" | "done" | "error">("idle");
+  const [uploadProgress, setUploadProgress] = useState("");
   const [uploadError, setUploadError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [proofStatus, setProofStatus] = useState<
     "idle" | "generating" | "ready" | "error"
@@ -168,20 +175,76 @@ export default function SubmitPage() {
     }
   }, [keyFileJson, keyFilePassword]);
 
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setAttachedFiles((prev) => {
+      const combined = [...prev, ...files].slice(0, MAX_FILES);
+      return combined;
+    });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
+
+  const handleRemoveFile = useCallback((index: number) => {
+    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   const handleEncryptAndUpload = useCallback(async () => {
     setUploadError("");
+    setUploadProgress("");
     setUploadStatus("working");
     try {
       const { keyB64, keyVersion } = getOrgPublicKeyConfig(selectedOrgId);
-      const blob = await encryptReportForOrgPublicKey(reportText, selectedOrgId, keyB64, keyVersion);
-      const cid = await uploadEncryptedReport(blob);
-      setEncryptedCID(cid);
+
+      // 1. Encrypt and upload the text report
+      setUploadProgress("Encrypting text report…");
+      const textBlob = await encryptReportForOrgPublicKey(reportText, selectedOrgId, keyB64, keyVersion);
+      setUploadProgress("Uploading text report to IPFS…");
+      const textCid = await uploadEncryptedReport(textBlob);
+
+      if (attachedFiles.length === 0) {
+        // No files — store text CID directly (backwards compatible)
+        setEncryptedCID(textCid);
+        setUploadStatus("done");
+        return;
+      }
+
+      // 2. Encrypt and upload each file
+      const fileMetas: ReportManifest["files"] = [];
+      for (let i = 0; i < attachedFiles.length; i++) {
+        const file = attachedFiles[i];
+        if (file.size > MAX_FILE_SIZE) {
+          throw new Error(`File "${file.name}" exceeds 10 MB limit`);
+        }
+        setUploadProgress(`Encrypting file ${i + 1}/${attachedFiles.length}: ${file.name}…`);
+        const encryptedFile = await encryptFile(file, keyB64, selectedOrgId, keyVersion);
+        setUploadProgress(`Uploading file ${i + 1}/${attachedFiles.length}: ${file.name}…`);
+        const fileCid = await uploadEncryptedFile(encryptedFile);
+        fileMetas.push({
+          cid: fileCid,
+          filename: file.name,
+          mimeType: file.type || "application/octet-stream",
+          originalSize: file.size,
+        });
+      }
+
+      // 3. Create and upload manifest
+      setUploadProgress("Uploading report manifest…");
+      const manifest: ReportManifest = {
+        v: 1,
+        type: "manifest",
+        textCid,
+        files: fileMetas,
+        createdAt: new Date().toISOString(),
+      };
+      const manifestCid = await uploadManifest(manifest);
+
+      setEncryptedCID(manifestCid);
       setUploadStatus("done");
     } catch (e: unknown) {
       setUploadError(e instanceof Error ? e.message : String(e));
       setUploadStatus("error");
     }
-  }, [reportText, selectedOrgId]);
+  }, [reportText, selectedOrgId, attachedFiles]);
 
   const handleGenerateProof = useCallback(async () => {
     setProofError("");
@@ -582,13 +645,63 @@ export default function SubmitPage() {
                 disabled={proofStatus === "generating" || uploadStatus === "working"}
               />
             </div>
+
+            {/* File attachments */}
+            <div>
+              <label className="label">Evidence files (optional)</label>
+              <div
+                className="border border-dashed border-white/20 p-4 text-center cursor-pointer hover:border-white/40 transition-colors"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Icon name="upload_file" className="text-white/30 text-3xl block mx-auto mb-2" />
+                <p className="text-xs font-mono text-slate-400">
+                  Click to attach files — max {MAX_FILES} files, 10MB each
+                </p>
+                <p className="text-[10px] font-mono text-slate-600 mt-1">
+                  Documents, images, audio — all encrypted in-browser before upload
+                </p>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleFileSelect}
+                disabled={proofStatus === "generating" || uploadStatus === "working" || attachedFiles.length >= MAX_FILES}
+              />
+            </div>
+
+            {attachedFiles.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">
+                  Attached ({attachedFiles.length}/{MAX_FILES})
+                </p>
+                {attachedFiles.map((file, i) => (
+                  <div key={`${file.name}-${i}`} className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-2">
+                    <Icon name="description" className="text-white/30 text-sm shrink-0" />
+                    <span className="text-xs font-mono text-slate-300 truncate flex-1">{file.name}</span>
+                    <span className="text-[10px] font-mono text-slate-500 shrink-0">
+                      {(file.size / 1024).toFixed(0)} KB
+                    </span>
+                    <button
+                      className="text-red-400 hover:text-red-300 text-xs font-bold shrink-0"
+                      onClick={() => handleRemoveFile(i)}
+                      disabled={uploadStatus === "working"}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div>
               <label className="label">Encryption mode</label>
               <div className="input font-mono text-xs py-3 text-slate-400">
                 Organization public-key encryption (no shared password)
               </div>
               <p className="mt-1 text-[10px] font-mono text-slate-600">
-                Your report is encrypted in-browser with the org public key.
+                Your report and files are encrypted in-browser with the org public key.
                 Only reviewers with org private key can decrypt.
               </p>
             </div>
@@ -605,11 +718,17 @@ export default function SubmitPage() {
                 ? "ENCRYPTING & UPLOADING…"
                 : uploadStatus === "done"
                   ? "UPLOADED ✓"
-                  : "ENCRYPT & UPLOAD TO IPFS"}
+                  : attachedFiles.length > 0
+                    ? `ENCRYPT & UPLOAD (${attachedFiles.length + 1} items)`
+                    : "ENCRYPT & UPLOAD TO IPFS"}
             </button>
+            {uploadStatus === "working" && uploadProgress && (
+              <p className="text-[10px] font-mono text-yellow-400 animate-pulse">{uploadProgress}</p>
+            )}
             {uploadStatus === "done" && encryptedCID && (
               <p className="text-[10px] font-mono text-green-400 break-all">
                 ✓ CID: {encryptedCID}
+                {attachedFiles.length > 0 && " (manifest with text + files)"}
               </p>
             )}
             {uploadStatus === "error" && (

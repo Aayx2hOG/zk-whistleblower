@@ -68,42 +68,97 @@ function mapDecryptError(message: string): string {
 }
 
 //report card
+
+interface FileInfo {
+  index: number;
+  filename: string;
+  mimeType: string;
+  originalSize: number;
+}
+
 function ReportCard({ report, orgId, reviewerKey }: { report: Report; orgId: number; reviewerKey: string }) {
   const date = new Date(Number(report.timestamp) * 1000).toLocaleString();
 
   const [decryptStatus, setDecryptStatus] = useState<"idle" | "working" | "done" | "error">("idle");
   const [decryptedText, setDecryptedText] = useState("");
   const [decryptError, setDecryptError] = useState("");
+  const [fileList, setFileList] = useState<FileInfo[]>([]);
+  const [downloadingFile, setDownloadingFile] = useState<number | null>(null);
+
+  const buildHeaders = useCallback((): Record<string, string> => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (reviewerKey.trim()) {
+      headers["x-api-key"] = reviewerKey.trim();
+    }
+    return headers;
+  }, [reviewerKey]);
 
   const handleDecrypt = useCallback(async () => {
     setDecryptError("");
     setDecryptStatus("working");
     try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (reviewerKey.trim()) {
-        headers["x-api-key"] = reviewerKey.trim();
-      }
-
       const res = await fetch("/api/decrypt", {
         method: "POST",
-        headers,
+        headers: buildHeaders(),
         body: JSON.stringify({ cid: report.encryptedCID, orgId }),
       });
 
-      const data = (await res.json().catch(() => ({}))) as { plaintext?: string; error?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        plaintext?: string;
+        error?: string;
+        manifest?: boolean;
+        files?: FileInfo[];
+      };
       if (!res.ok || typeof data.plaintext !== "string") {
         throw new Error(data.error || `Decrypt failed (${res.status})`);
       }
 
-      const plaintext = data.plaintext;
-      setDecryptedText(plaintext);
+      setDecryptedText(data.plaintext);
+      if (data.manifest && Array.isArray(data.files)) {
+        setFileList(data.files);
+      }
       setDecryptStatus("done");
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       setDecryptError(mapDecryptError(message));
       setDecryptStatus("error");
     }
-  }, [report.encryptedCID, orgId, reviewerKey]);
+  }, [report.encryptedCID, orgId, buildHeaders]);
+
+  const handleDownloadFile = useCallback(async (fileIndex: number, filename: string) => {
+    setDownloadingFile(fileIndex);
+    try {
+      const res = await fetch("/api/decrypt", {
+        method: "POST",
+        headers: buildHeaders(),
+        body: JSON.stringify({ cid: report.encryptedCID, orgId, fileIndex }),
+      });
+
+      const data = (await res.json().catch(() => ({}))) as {
+        base64?: string;
+        filename?: string;
+        mimeType?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.base64) {
+        throw new Error(data.error || "File download failed");
+      }
+
+      // Convert base64 to blob and trigger download
+      const bytes = Uint8Array.from(atob(data.base64), (c) => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: data.mimeType || "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = data.filename || filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      setDecryptError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDownloadingFile(null);
+    }
+  }, [report.encryptedCID, orgId, buildHeaders]);
 
   return (
     <div className="card space-y-3">
@@ -143,8 +198,39 @@ function ReportCard({ report, orgId, reviewerKey }: { report: Report; orgId: num
           {decryptStatus === "working" ? "Decrypting…" : decryptStatus === "done" ? "Decrypted ✓" : "Decrypt"}
         </button>
         {decryptStatus === "done" && (
-          <div className="bg-black/40 border border-green-500/30 p-3 text-xs font-mono text-green-300 whitespace-pre-wrap break-words">
-            {decryptedText}
+          <div className="space-y-3">
+            <div className="bg-black/40 border border-green-500/30 p-3 text-xs font-mono text-green-300 whitespace-pre-wrap break-words">
+              {decryptedText}
+            </div>
+
+            {/* File attachments */}
+            {fileList.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">
+                  Attached files ({fileList.length})
+                </p>
+                {fileList.map((f) => (
+                  <div
+                    key={f.index}
+                    className="flex items-center gap-3 bg-white/5 border border-white/10 px-3 py-2"
+                  >
+                    <span className="text-xs font-mono text-slate-300 truncate flex-1">
+                      {f.filename}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-500 shrink-0">
+                      {(f.originalSize / 1024).toFixed(0)} KB · {f.mimeType}
+                    </span>
+                    <button
+                      className="btn-ghost text-[10px] px-3 py-1 shrink-0"
+                      onClick={() => handleDownloadFile(f.index, f.filename)}
+                      disabled={downloadingFile !== null}
+                    >
+                      {downloadingFile === f.index ? "Decrypting…" : "Download"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {decryptStatus === "error" && (
