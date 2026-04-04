@@ -68,7 +68,7 @@ function mapDecryptError(message: string): string {
 }
 
 //report card
-function ReportCard({ report, orgId }: { report: Report; orgId: number }) {
+function ReportCard({ report, orgId, reviewerKey }: { report: Report; orgId: number; reviewerKey: string }) {
   const date = new Date(Number(report.timestamp) * 1000).toLocaleString();
 
   const [decryptStatus, setDecryptStatus] = useState<"idle" | "working" | "done" | "error">("idle");
@@ -79,9 +79,14 @@ function ReportCard({ report, orgId }: { report: Report; orgId: number }) {
     setDecryptError("");
     setDecryptStatus("working");
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (reviewerKey.trim()) {
+        headers["x-api-key"] = reviewerKey.trim();
+      }
+
       const res = await fetch("/api/decrypt", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ cid: report.encryptedCID, orgId }),
       });
 
@@ -98,7 +103,7 @@ function ReportCard({ report, orgId }: { report: Report; orgId: number }) {
       setDecryptError(mapDecryptError(message));
       setDecryptStatus("error");
     }
-  }, [report.encryptedCID, orgId]);
+  }, [report.encryptedCID, orgId, reviewerKey]);
 
   return (
     <div className="card space-y-3">
@@ -157,6 +162,7 @@ export default function ReviewerPage() {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [reviewerKey, setReviewerKey] = useState("");
 
   const {
     data: reportCount,
@@ -322,6 +328,26 @@ export default function ReviewerPage() {
         </div>
       </div>
 
+      {/* Reviewer authentication */}
+      <section className="card space-y-3">
+        <div>
+          <p className="step-label">AUTHENTICATION</p>
+          <h2 className="section-heading">Reviewer Access</h2>
+        </div>
+        <label className="label">Reviewer API Key</label>
+        <input
+          className="input font-mono text-xs"
+          type="password"
+          placeholder="Enter your reviewer API key to decrypt reports"
+          value={reviewerKey}
+          onChange={(e) => setReviewerKey(e.target.value)}
+        />
+        <p className="text-[10px] font-mono text-slate-600">
+          This key is never stored — it lives only in memory while this page is open.
+          Contact your org admin if you don't have one.
+        </p>
+      </section>
+
       {loading && (
         <div className="card animate-pulse text-center text-slate-500 font-mono text-sm">
           LOADING_REPORTS...
@@ -341,7 +367,7 @@ export default function ReviewerPage() {
 
       <div className="space-y-4">
         {[...reports].reverse().map((r) => (
-          <ReportCard key={r.id.toString()} report={r} orgId={selectedOrgId} />
+          <ReportCard key={r.id.toString()} report={r} orgId={selectedOrgId} reviewerKey={reviewerKey} />
         ))}
       </div>
 

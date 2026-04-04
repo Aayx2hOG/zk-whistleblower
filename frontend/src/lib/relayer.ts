@@ -41,9 +41,17 @@ type RelayRequest =
     };
 
 async function relayTx(body: RelayRequest): Promise<RelayResponse> {
+    const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+    };
+    const apiKey = process.env.NEXT_PUBLIC_RELAY_API_KEY;
+    if (apiKey) {
+        headers["x-api-key"] = apiKey;
+    }
+
     const res = await fetch("/api/relay", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(body),
     });
 

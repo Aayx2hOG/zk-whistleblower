@@ -33,6 +33,18 @@ function isV2Blob(blob: EncryptedBlob): blob is PublicKeyEncryptedBlob {
 
 export async function POST(req: NextRequest) {
   try {
+    // --- Reviewer API key authentication ---
+    const expectedKey = process.env.REVIEWER_API_KEY;
+    if (expectedKey) {
+      const providedKey = req.headers.get("x-api-key");
+      if (!providedKey || providedKey !== expectedKey) {
+        return NextResponse.json(
+          { error: "Unauthorized — provide a valid reviewer API key to decrypt reports" },
+          { status: 401 }
+        );
+      }
+    }
+
     const body = (await req.json()) as { cid?: string; orgId?: number };
     if (typeof body.cid !== "string" || !body.cid.trim()) {
       return NextResponse.json({ error: "Missing CID" }, { status: 400 });
