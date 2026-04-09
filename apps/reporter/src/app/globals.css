@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #060610;
+  --foreground: #ededed;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), "Inter", sans-serif;
+}
+
+/* Background grid decoration */
+.bg-grid {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 80px 80px;
+}
+
+
+.card {
+  @apply border border-white/10 bg-white/[0.02] p-8;
+}
+
+
+.input {
+  @apply w-full border border-white/20 bg-transparent p-4 font-mono text-white text-sm placeholder-slate-500 focus:border-white focus:outline-none focus:ring-0;
+}
+
+/* Shared label style */
+.label {
+  @apply mb-2 block text-[10px] font-bold text-slate-400 uppercase tracking-widest;
+}
+
+/* Primary button */
+.btn-primary {
+  @apply w-full py-4 border border-white text-white hover:bg-white hover:text-black transition-all font-black uppercase tracking-widest text-sm disabled:cursor-not-allowed disabled:opacity-40;
+}
+
+/* Danger button */
+.btn-danger {
+  @apply w-full py-4 border border-red-500 text-red-500 hover:bg-red-500 hover:text-black transition-all font-black uppercase tracking-widest text-sm disabled:cursor-not-allowed disabled:opacity-40;
+}
+
+/* Ghost/secondary button */
+.btn-ghost {
+  @apply border border-white/20 px-4 py-3 text-sm font-bold text-slate-300 hover:border-white hover:text-white disabled:opacity-40 transition-colors uppercase tracking-wider;
+}
+
+/* Submit CTA button */
+.btn-cta {
+  @apply w-full bg-white text-black py-6 text-xl font-black uppercase tracking-tighter hover:bg-slate-200 transition-colors flex items-center justify-center gap-3;
+}
+
+/* Step label style */
+.step-label {
+  @apply text-[10px] font-mono text-white/40 mb-1;
+}
+
+/* Section heading */
+.section-heading {
+  @apply text-xl font-black uppercase text-white;
+}

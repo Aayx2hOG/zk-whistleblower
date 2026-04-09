@@ -27,12 +27,10 @@ test/fixtures/setup.ts           — Poseidon, Merkle tree, proof generation uti
 test/WhistleblowerRegistry.ts    — 13 tests with real ZK proofs
 scripts/compile-circuit.ts       — Circuit compilation + trusted setup pipeline
 scripts/deploy.ts                — Deploy + end-to-end demo
-frontend/                        — Next.js 15 UI 
-  src/app/admin/                 —   Admin: register / revoke Merkle roots
-  src/app/submit/                —   Submit: generate ZK proof + send report
-  src/app/reviewer/              —   Reviewer: list all ReportSubmitted events
-  src/lib/                       —   contracts ABI, Poseidon, Merkle tree, zkProof helpers
-  src/providers/                 —   wagmi v2 + RainbowKit wallet provider
+apps/admin/                      — Admin app (dashboard, admin, admin keys, reviewer)
+apps/reporter/                   — Reporter app (join org, submit report)
+packages/shared/                 — Shared business logic previously in src/lib
+packages/ui/                     — Shared UI/providers previously in src/components + src/providers
 ```
 
 ## Setup
@@ -50,42 +48,49 @@ pnpm run deploy:local       # deploy + demo on local Hardhat network
 pnpm run deploy:sepolia     # deploy to Sepolia testnet
 ```
 
-## Frontend 
+## Apps (Admin + Reporter)
 
 ### First-time setup
 
 ```bash
-# 1. Copy circuit artifacts into the Next.js public dir
-cd frontend
+# 1. Install workspace dependencies from root
 pnpm install
-pnpm run copy-artifacts         # copies wasm + zkey from ../circuits-artifacts/
 
-# 2. Set contract addresses
-cp .env.local.example .env.local
-#    → paste addresses printed by `pnpm run deploy:local` into .env.local
+# 2. Copy circuit artifacts into each app public dir
+pnpm --filter @zk-whistleblower/admin copy-artifacts
+pnpm --filter @zk-whistleblower/reporter copy-artifacts
 
-# 3. Start dev server
-pnpm run dev                    # http://localhost:3000
+# 3. Set contract addresses / env values per app
+#    apps/admin/.env.local
+#    apps/reporter/.env.local
+#    → paste addresses printed by `pnpm run deploy:local`
+
+# 4. Start app dev servers
+pnpm run dev:admin              # http://localhost:3000
+pnpm run dev:reporter           # http://localhost:3001
+
+# Optional: run reporter on a custom port (note: no extra `--` before flags)
+pnpm --filter @zk-whistleblower/reporter dev -p 3100
 ```
 
 ### Exit criteria (local Hardhat)
 
 1. Start Hardhat node: `npx hardhat node` (in root dir)
 2. Deploy contracts: `npx hardhat run --network localhost scripts/deploy.ts`
-3. Copy the printed addresses into `frontend/.env.local`
-4. Run `pnpm run dev` in `frontend/`
+3. Copy the printed addresses into `apps/admin/.env.local` and `apps/reporter/.env.local`
+4. Run `pnpm run dev:admin` and `pnpm run dev:reporter` from root
 5. Connect MetaMask to `localhost:8545` (Chain ID 31337)
-6. **Join Org page**: create 3-5 demo users (secret + commitment generated locally)
-7. **Admin page**: load root from Join Org list (or generate manually) → Add Root
-8. **Submit page**: load demo context for each user → Generate Proof (~30 s) → Submit Report
-9. **Reviewer page**: see the submitted reports listed with category and CID
+6. **Reporter app / Join Org page**: create 3-5 demo users (secret + commitment generated locally)
+7. **Admin app / Admin page**: load root from Join Org list (or generate manually) → Add Root
+8. **Reporter app / Submit page**: load demo context for each user → Generate Proof (~30 s) → Submit Report
+9. **Admin app / Reviewer page**: see the submitted reports listed with category and CID
 
 ### Demo exit criteria
 
 - 3-5 demo members can each submit once for the same `externalNullifier`
 - Reusing the same member for a second submission is rejected with `Nullifier already used`
 
-### Tech stack (frontend)
+### Tech stack (apps)
 
 | Library | Purpose |
 |---|---|

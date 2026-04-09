@@ -1,5 +1,12 @@
 # Node modules
 /node_modules
+node_modules/
+
+# Next.js build outputs
+.next/
+
+# TypeScript build info
+*.tsbuildinfo
 
 # Compilation output
 /dist
