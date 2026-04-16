@@ -75,6 +75,32 @@ export const REGISTRY_ABI = [
     name: "OrganizationInactive",
     inputs: [],
   },
+  {
+    type: "error",
+    name: "InvalidOrgAdminAccount",
+    inputs: [],
+  },
+  {
+    type: "error",
+    name: "CannotModifySuperAdmin",
+    inputs: [{ name: "account", type: "address" }],
+  },
+  {
+    type: "error",
+    name: "OrgAdminAlreadyGranted",
+    inputs: [
+      { name: "orgId", type: "uint256" },
+      { name: "account", type: "address" },
+    ],
+  },
+  {
+    type: "error",
+    name: "OrgAdminAlreadyRevoked",
+    inputs: [
+      { name: "orgId", type: "uint256" },
+      { name: "account", type: "address" },
+    ],
+  },
   //Events
   {
     type: "event",

@@ -27,6 +27,10 @@ contract WhistleblowerRegistry is AccessControl {
     error OrganizationDoesNotExist();
     error OrganizationInactive();
     error UnauthorizedOrgAdmin(uint256 orgId, address account);
+    error InvalidOrgAdminAccount();
+    error CannotModifySuperAdmin(address account);
+    error OrgAdminAlreadyGranted(uint256 orgId, address account);
+    error OrgAdminAlreadyRevoked(uint256 orgId, address account);
 
     IGroth16Verifier public immutable verifier;
 
@@ -128,14 +132,21 @@ contract WhistleblowerRegistry is AccessControl {
         address _account
     ) public view returns (bool) {
         return
-            hasRole(SUPER_ADMIN_ROLE, _account) || orgAdmins[_orgId][_account];
+            hasRole(SUPER_ADMIN_ROLE, _account) ||
+            orgAdmins[_orgId][_account] ||
+            hasRole(orgAdminRole(_orgId), _account);
     }
 
     function grantOrgAdmin(
         uint256 _orgId,
         address _account
-    ) external onlyRole(SUPER_ADMIN_ROLE) {
+    ) external onlyOrgAdmin(_orgId) {
         if (!organizationExists[_orgId]) revert OrganizationDoesNotExist();
+        if (_account == address(0)) revert InvalidOrgAdminAccount();
+        if (hasRole(SUPER_ADMIN_ROLE, _account))
+            revert CannotModifySuperAdmin(_account);
+        if (isOrgAdmin(_orgId, _account))
+            revert OrgAdminAlreadyGranted(_orgId, _account);
 
         orgAdmins[_orgId][_account] = true;
         _grantRole(orgAdminRole(_orgId), _account);
@@ -146,11 +157,18 @@ contract WhistleblowerRegistry is AccessControl {
     function revokeOrgAdmin(
         uint256 _orgId,
         address _account
-    ) external onlyRole(SUPER_ADMIN_ROLE) {
+    ) external onlyOrgAdmin(_orgId) {
         if (!organizationExists[_orgId]) revert OrganizationDoesNotExist();
+        if (_account == address(0)) revert InvalidOrgAdminAccount();
+        if (hasRole(SUPER_ADMIN_ROLE, _account))
+            revert CannotModifySuperAdmin(_account);
+        if (!isOrgAdmin(_orgId, _account))
+            revert OrgAdminAlreadyRevoked(_orgId, _account);
 
         orgAdmins[_orgId][_account] = false;
-        _revokeRole(orgAdminRole(_orgId), _account);
+        if (hasRole(orgAdminRole(_orgId), _account)) {
+            _revokeRole(orgAdminRole(_orgId), _account);
+        }
 
         emit OrgAdminRevoked(_orgId, _account, msg.sender);
     }

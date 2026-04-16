@@ -53,6 +53,8 @@ describe("WhistleblowerRegistry", function () {
     let registry: any;
     let owner: any;
     let nonOwner: any;
+    let thirdAccount: any;
+    let fourthAccount: any;
     let superAdminRole: string;
 
     const secrets = [123456789n, 987654321n, 555555555n];
@@ -64,7 +66,7 @@ describe("WhistleblowerRegistry", function () {
         this.timeout(30000);
         await initPoseidon();
 
-        [owner, nonOwner] = await ethers.getSigners();
+        [owner, nonOwner, thirdAccount, fourthAccount] = await ethers.getSigners();
 
         commitments = secrets.map((s) => poseidonHash([s]));
         tree = buildMerkleTree(commitments);
@@ -135,6 +137,44 @@ describe("WhistleblowerRegistry", function () {
             await expect(registry.connect(nonOwner).revokeRootForOrg(1, orgRoot))
                 .to.emit(registry, "RootRevokedForOrg")
                 .withArgs(1, orgRoot);
+        });
+
+        it("should allow org admin to grant another org admin", async function () {
+            await expect(
+                registry.connect(nonOwner).grantOrgAdmin(1, thirdAccount.address)
+            )
+                .to.emit(registry, "OrgAdminGranted")
+                .withArgs(1n, thirdAccount.address, nonOwner.address);
+
+            expect(await registry.isOrgAdmin(1, thirdAccount.address)).to.equal(true);
+        });
+
+        it("should keep AccessControl org role and isOrgAdmin in sync", async function () {
+            const orgRole = await registry.orgAdminRole(1);
+            await registry.grantRole(orgRole, nonOwner.address);
+            expect(await registry.isOrgAdmin(1, nonOwner.address)).to.equal(true);
+        });
+
+        it("should reject org admin role changes for super-admin accounts", async function () {
+            await expect(
+                registry.grantOrgAdmin(1, owner.address)
+            ).to.be.revertedWithCustomError(registry, "CannotModifySuperAdmin");
+
+            await expect(
+                registry.revokeOrgAdmin(1, owner.address)
+            ).to.be.revertedWithCustomError(registry, "CannotModifySuperAdmin");
+        });
+
+        it("should reject duplicate org admin grant and duplicate revoke", async function () {
+            await registry.grantOrgAdmin(1, fourthAccount.address);
+            await expect(
+                registry.grantOrgAdmin(1, fourthAccount.address)
+            ).to.be.revertedWithCustomError(registry, "OrgAdminAlreadyGranted");
+
+            await registry.revokeOrgAdmin(1, fourthAccount.address);
+            await expect(
+                registry.revokeOrgAdmin(1, fourthAccount.address)
+            ).to.be.revertedWithCustomError(registry, "OrgAdminAlreadyRevoked");
         });
     });
 
