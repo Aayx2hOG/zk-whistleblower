@@ -101,6 +101,24 @@ export const REGISTRY_ABI = [
   },
   {
     type: "event",
+    name: "OrgAdminGranted",
+    inputs: [
+      { indexed: true, name: "orgId", type: "uint256" },
+      { indexed: true, name: "account", type: "address" },
+      { indexed: true, name: "grantedBy", type: "address" },
+    ],
+  },
+  {
+    type: "event",
+    name: "OrgAdminRevoked",
+    inputs: [
+      { indexed: true, name: "orgId", type: "uint256" },
+      { indexed: true, name: "account", type: "address" },
+      { indexed: true, name: "revokedBy", type: "address" },
+    ],
+  },
+  {
+    type: "event",
     name: "RootAddedForOrg",
     inputs: [
       { indexed: true, name: "orgId", type: "uint256" },

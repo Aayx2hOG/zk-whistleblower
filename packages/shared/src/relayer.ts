@@ -12,6 +12,8 @@ type RelayRequest =
     | { action: "revokeRootForOrg"; payload: { orgId: string; root: string } }
     | { action: "createOrganization"; payload: { orgId: string; name: string } }
     | { action: "setOrganizationActive"; payload: { orgId: string; active: boolean } }
+    | { action: "grantOrgAdmin"; payload: { orgId: string; account: string } }
+    | { action: "revokeOrgAdmin"; payload: { orgId: string; account: string } }
     | {
         action: "submitReport";
         payload: {
@@ -44,7 +46,8 @@ async function relayTx(body: RelayRequest): Promise<RelayResponse> {
     const headers: Record<string, string> = {
         "Content-Type": "application/json",
     };
-    const apiKey = process.env.NEXT_PUBLIC_RELAY_API_KEY;
+    const apiKey = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+        ?.NEXT_PUBLIC_RELAY_API_KEY;
     if (apiKey) {
         headers["x-api-key"] = apiKey;
     }
@@ -97,6 +100,14 @@ export function relayCreateOrganization(orgId: number, name: string) {
 
 export function relaySetOrganizationActive(orgId: number, active: boolean) {
     return relayTx({ action: "setOrganizationActive", payload: { orgId: String(orgId), active } });
+}
+
+export function relayGrantOrgAdmin(orgId: number, account: string) {
+    return relayTx({ action: "grantOrgAdmin", payload: { orgId: String(orgId), account } });
+}
+
+export function relayRevokeOrgAdmin(orgId: number, account: string) {
+    return relayTx({ action: "revokeOrgAdmin", payload: { orgId: String(orgId), account } });
 }
 
 export function relaySubmitReport(

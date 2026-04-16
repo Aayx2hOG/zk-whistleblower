@@ -21,9 +21,18 @@ const CARDS = [
     action: "MANAGE KEYS",
   },
   {
+    href: "/admin/admins",
+    icon: "manage_accounts",
+    step: "03",
+    title: "Admin Manager",
+    description:
+      "Grant or revoke org-admin roles for Ethereum addresses. Verify current admin status on-chain.",
+    action: "MANAGE ADMINS",
+  },
+  {
     href: "/reviewer",
     icon: "description",
-    step: "03",
+    step: "04",
     title: "Reviewer",
     description:
       "Browse all submitted reports. Fetch encrypted evidence from IPFS and decrypt locally.",

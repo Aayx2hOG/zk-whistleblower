@@ -5,6 +5,7 @@ import { Providers, OrgProvider, Navbar, Sidebar, type NavItem } from "@zk-whist
 const ADMIN_NAV_ITEMS: NavItem[] = [
   { href: "/admin", icon: "admin_panel_settings", label: "Admin" },
   { href: "/admin/keys", icon: "key", label: "Admin Keys" },
+  { href: "/admin/admins", icon: "manage_accounts", label: "Admin Manager" },
   { href: "/reviewer", icon: "description", label: "Reviewer" },
 ];
 

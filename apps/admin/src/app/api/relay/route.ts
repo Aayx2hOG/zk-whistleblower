@@ -13,6 +13,8 @@ type RelayAction =
     | "revokeRootForOrg"
     | "createOrganization"
     | "setOrganizationActive"
+    | "grantOrgAdmin"
+    | "revokeOrgAdmin"
     | "submitReport"
     | "submitReportForOrg";
 
@@ -21,6 +23,13 @@ function asBigInt(value: unknown, field: string): bigint {
         throw new Error(`${field} must be a non-empty string`);
     }
     return BigInt(value);
+}
+
+function asAddress(value: unknown, field: string): `0x${string}` {
+    if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value)) {
+        throw new Error(`${field} must be a valid 20-byte hex address`);
+    }
+    return value as `0x${string}`;
 }
 
 function readConfig() {
@@ -174,6 +183,30 @@ export async function POST(req: NextRequest) {
                 abi: REGISTRY_ABI,
                 functionName: "setOrganizationActive",
                 args: [asBigInt(body.payload.orgId, "orgId"), active],
+                account,
+            });
+        } else if (body.action === "grantOrgAdmin") {
+            await ensureOrganizationApisAvailable(publicClient);
+            txHash = await walletClient.writeContract({
+                address: REGISTRY_ADDRESS,
+                abi: REGISTRY_ABI,
+                functionName: "grantOrgAdmin",
+                args: [
+                    asBigInt(body.payload.orgId, "orgId"),
+                    asAddress(body.payload.account, "account"),
+                ],
+                account,
+            });
+        } else if (body.action === "revokeOrgAdmin") {
+            await ensureOrganizationApisAvailable(publicClient);
+            txHash = await walletClient.writeContract({
+                address: REGISTRY_ADDRESS,
+                abi: REGISTRY_ABI,
+                functionName: "revokeOrgAdmin",
+                args: [
+                    asBigInt(body.payload.orgId, "orgId"),
+                    asAddress(body.payload.account, "account"),
+                ],
                 account,
             });
         } else {
