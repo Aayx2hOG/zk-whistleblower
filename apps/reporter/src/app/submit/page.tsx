@@ -11,7 +11,7 @@ import { relaySubmitReport, relaySubmitReportForOrg, relayAddRootForOrg } from "
 import { initPoseidon } from "@zk-whistleblower/shared/src/poseidon";
 import { buildMerkleTree } from "@zk-whistleblower/shared/src/merkle";
 import { generateZKProof, type FormattedProof } from "@zk-whistleblower/shared/src/zkProof";
-import { decryptSecret, type MemberKeyFile } from "@zk-whistleblower/shared/src/secretGen";
+import { decryptSecret, type MemberKeyFile, type MemberManifest } from "@zk-whistleblower/shared/src/secretGen";
 import { encryptReportForOrgPublicKey } from "@zk-whistleblower/shared/src/encryption";
 import { uploadEncryptedReport, uploadEncryptedFile, uploadManifest } from "@zk-whistleblower/shared/src/ipfs";
 import { encryptFile, type ReportManifest } from "@zk-whistleblower/shared/src/fileEncryption";
@@ -80,6 +80,13 @@ export default function SubmitPage() {
   const { selectedOrgId } = useOrg();
   const [keyFileJson, setKeyFileJson] = useState("");
   const [keyFilePassword, setKeyFilePassword] = useState("");
+  const [keyFileName, setKeyFileName] = useState("");
+  const [manifestFileName, setManifestFileName] = useState("");
+  const [manifestImportStatus, setManifestImportStatus] = useState<
+    "idle" | "loading" | "done" | "error"
+  >("idle");
+  const [manifestImportMessage, setManifestImportMessage] = useState("");
+  const [manifestImportError, setManifestImportError] = useState("");
   const [keyImportStatus, setKeyImportStatus] = useState<
     "idle" | "decrypting" | "done" | "error"
   >("idle");
@@ -92,6 +99,7 @@ export default function SubmitPage() {
   const [leafIndex, setLeafIndex] = useState("0");
   const [orgSecrets, setOrgSecrets] = useState("");
   const [externalNullifier, setExternalNullifier] = useState("42");
+  const [epochRangeLabel, setEpochRangeLabel] = useState("");
   const [encryptedCID, setEncryptedCID] = useState("");
   const [category, setCategory] = useState<0 | 1 | 2 | 3>(0);
 
@@ -111,7 +119,6 @@ export default function SubmitPage() {
   const [submitError, setSubmitError] = useState("");
   const [submitPending, setSubmitPending] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
-  const [rootAutoRegistered, setRootAutoRegistered] = useState(false);
   const [submittedTxHash, setSubmittedTxHash] = useState<`0x${string}` | "">("");
 
   const log = (msg: string) =>
@@ -126,7 +133,9 @@ export default function SubmitPage() {
   }, [selectedDemoId, selectedOrgId]);
 
   useEffect(() => {
-    setExternalNullifier(getCurrentEpoch().toString());
+    const epoch = getCurrentEpoch();
+    setExternalNullifier(epoch.toString());
+    setEpochRangeLabel(formatEpochRange(epoch));
   }, []);
 
   const handleLoadDemoContext = useCallback(() => {
@@ -154,12 +163,105 @@ export default function SubmitPage() {
 
   const handleKeyFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      setKeyFileJson("");
+      setKeyFileName("");
+      setKeyImportStatus("idle");
+      setKeyImportError("");
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (ev) => setKeyFileJson((ev.target?.result as string) ?? "");
     reader.readAsText(file);
+    setKeyFileName(file.name);
     setKeyImportStatus("idle");
     setKeyImportError("");
+    e.target.value = "";
+  };
+
+  const handleManifestFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setManifestFileName("");
+      setManifestImportStatus("idle");
+      setManifestImportMessage("");
+      setManifestImportError("");
+      return;
+    }
+
+    setManifestFileName(file.name);
+    setManifestImportStatus("loading");
+    setManifestImportMessage("");
+    setManifestImportError("");
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const raw = String(ev.target?.result ?? "");
+        const parsed = JSON.parse(raw) as
+          | (Partial<MemberManifest> & { type?: unknown; textCid?: unknown })
+          | null;
+
+        if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.commitments)) {
+          if (parsed && parsed.type === "manifest" && typeof parsed.textCid === "string") {
+            throw new Error(
+              "This is a report payload manifest. Upload the membership manifest from admin (it includes a commitments array)."
+            );
+          }
+          throw new Error('Invalid membership manifest: missing "commitments" array.');
+        }
+
+        const commitments = parsed.commitments.map((value, index) => {
+          const commitment = String(value).trim();
+          if (!commitment) {
+            throw new Error(`Commitment at index ${index} is empty.`);
+          }
+          BigInt(commitment);
+          return commitment;
+        });
+
+        if (commitments.length === 0) {
+          throw new Error("Membership manifest has no commitments.");
+        }
+
+        setOrgSecrets(commitments.join("\n"));
+
+        let autoLeafSuffix = "";
+        if (keyFileJson.trim()) {
+          try {
+            const keyFile = JSON.parse(keyFileJson) as Partial<MemberKeyFile>;
+            const keyCommitment = typeof keyFile.commitment === "string" ? keyFile.commitment.trim() : "";
+            if (keyCommitment) {
+              const idx = commitments.findIndex((c) => c === keyCommitment);
+              if (idx >= 0) {
+                setLeafIndex(String(idx));
+                autoLeafSuffix = ` Leaf index auto-set to ${idx}.`;
+              }
+            }
+          } catch {
+            // Key file parse issues are handled in key import flow; ignore here.
+          }
+        }
+
+        setManifestImportStatus("done");
+        setManifestImportError("");
+        setManifestImportMessage(`Loaded ${commitments.length} commitments from manifest.${autoLeafSuffix}`);
+      } catch (err: unknown) {
+        setManifestImportStatus("error");
+        setManifestImportMessage("");
+        setManifestImportError(err instanceof Error ? err.message : String(err));
+      }
+    };
+
+    reader.onerror = () => {
+      setManifestImportStatus("error");
+      setManifestImportMessage("");
+      setManifestImportError("Failed to read manifest file.");
+    };
+
+    reader.readAsText(file);
+    e.target.value = "";
   };
 
   const handleDecryptKeyFile = useCallback(async () => {
@@ -344,7 +446,6 @@ export default function SubmitPage() {
     if (!proof) return;
     setSubmitError("");
     setSubmitSuccess(false);
-    setRootAutoRegistered(false);
     if (!encryptedCID.trim()) {
       setSubmitError("Upload encrypted report first to get CID.");
       return;
@@ -403,7 +504,6 @@ export default function SubmitPage() {
         // This eliminates the need for manual admin intervention.
         try {
           await relayAddRootForOrg(selectedOrgId, proof.root.toString());
-          setRootAutoRegistered(true);
 
           // Verify the root was actually registered
           if (supportsOrgApis) {
@@ -430,7 +530,6 @@ export default function SubmitPage() {
           const regMsg = regErr instanceof Error ? regErr.message : String(regErr);
           if (regMsg.includes("RootAlreadyExists")) {
             // Race condition: root was registered between our check and the relay call — fine, proceed.
-            setRootAutoRegistered(true);
           } else if (regMsg.includes("Failed to fetch") || regMsg.includes("fetch")) {
             setSubmitError(
               "Cannot reach the relayer API (/api/relay). Make sure the reporter dev server is running (pnpm dev:reporter)."
@@ -606,13 +705,26 @@ export default function SubmitPage() {
                 file you received from your admin — your secret is decrypted
                 locally and auto-fills the field below.
               </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <label
+                  htmlFor="member-key-upload"
+                  className={`inline-flex items-center gap-2 border px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors ${
+                    proofStatus === "generating"
+                      ? "cursor-not-allowed border-white/10 text-slate-600"
+                      : "cursor-pointer border-white/25 text-slate-300 hover:border-white hover:text-white"
+                  }`}
+                >
+                  {keyFileName ? "Replace key file" : "Choose key file"}
+                </label>
+                <p className="min-w-0 flex-1 truncate text-[10px] font-mono text-slate-500">
+                  {keyFileName || "No file selected"}
+                </p>
+              </div>
               <input
+                id="member-key-upload"
                 type="file"
                 accept=".json,application/json"
-                className="text-xs font-mono text-slate-400 file:mr-3 file:border file:border-white/20
-                  file:bg-transparent file:text-white file:text-xs file:font-bold file:uppercase
-                  file:tracking-wider file:px-3 file:py-1 file:cursor-pointer
-                  hover:file:border-white hover:file:text-white cursor-pointer"
+                className="sr-only"
                 onChange={handleKeyFileChange}
                 disabled={proofStatus === "generating"}
               />
@@ -734,24 +846,58 @@ export default function SubmitPage() {
             disabled={proofStatus === "generating"}
           />
           <p className="mt-1 text-[10px] font-mono text-slate-600">
-            Current epoch: {formatEpochRange(getCurrentEpoch())} — allows one submission per 24h period
+            Current epoch: {epochRangeLabel || "loading..."} — allows one submission per 24h period
           </p>
         </div>
 
 
         <div>
-          <label className="label">All organisation commitments (from manifest.json)</label>
-          <textarea
-            className="input h-24 resize-none font-mono text-xs"
-            placeholder={"Paste the \"commitments\" array from manifest.json\n(one commitment per line)"}
-            value={orgSecrets}
-            onChange={(e) => setOrgSecrets(e.target.value)}
-            disabled={proofStatus === "generating"}
-          />
+          <label className="label">Organisation commitments</label>
+          <div className="mb-3 bg-white/[0.03] border border-white/10 p-4 space-y-3">
+            <p className="label">Import membership manifest (recommended)</p>
+            <p className="text-[10px] font-mono text-slate-600">
+              Upload admin-generated <span className="text-slate-400">manifest.json</span> to auto-fill commitments.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <label
+                htmlFor="membership-manifest-upload"
+                className={`inline-flex items-center gap-2 border px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors ${
+                  proofStatus === "generating"
+                    ? "cursor-not-allowed border-white/10 text-slate-600"
+                    : "cursor-pointer border-white/25 text-slate-300 hover:border-white hover:text-white"
+                }`}
+              >
+                {manifestFileName ? "Replace manifest" : "Choose manifest.json"}
+              </label>
+              <p className="min-w-0 flex-1 truncate text-[10px] font-mono text-slate-500">
+                {manifestFileName || "No file selected"}
+              </p>
+            </div>
+            <input
+              id="membership-manifest-upload"
+              type="file"
+              accept=".json,application/json"
+              className="sr-only"
+              onChange={handleManifestFileChange}
+              disabled={proofStatus === "generating"}
+            />
+            {manifestImportStatus === "loading" && (
+              <p className="text-xs text-yellow-400 font-mono">Parsing manifest...</p>
+            )}
+            {manifestImportStatus === "done" && manifestImportMessage && (
+              <p className="text-xs text-green-400 font-mono">{manifestImportMessage}</p>
+            )}
+            {manifestImportStatus === "error" && (
+              <p className="text-xs text-red-400 font-mono">{manifestImportError}</p>
+            )}
+          </div>
           <p className="mt-1 text-[10px] font-mono text-slate-600">
-            Admin shares <span className="text-slate-400">manifest.json</span>{" "}
-            after generating secrets. Paste the commitment values here —
-            used locally to compute your Merkle path, never sent anywhere.
+            {orgSecrets.trim()
+              ? `Loaded ${orgSecrets
+                  .split(/\n+/)
+                  .map((s) => s.trim())
+                  .filter(Boolean).length} commitments for local proof generation.`
+              : "No commitments loaded yet. Upload membership manifest.json or use Load Demo Context."}
           </p>
         </div>
       </section>
@@ -782,15 +928,34 @@ export default function SubmitPage() {
             <div>
               <label className="label">Evidence files (optional)</label>
               <div
-                className="border border-dashed border-white/20 p-4 text-center cursor-pointer hover:border-white/40 transition-colors"
-                onClick={() => fileInputRef.current?.click()}
+                className={`group border border-dashed p-4 transition-colors ${
+                  attachedFiles.length >= MAX_FILES
+                    ? "cursor-not-allowed border-white/10 bg-white/[0.01]"
+                    : "cursor-pointer border-white/20 bg-white/[0.02] hover:border-white/50 hover:bg-white/[0.04]"
+                }`}
+                onClick={() => {
+                  if (
+                    attachedFiles.length < MAX_FILES &&
+                    proofStatus !== "generating" &&
+                    uploadStatus !== "working"
+                  ) {
+                    fileInputRef.current?.click();
+                  }
+                }}
               >
-                <Icon name="upload_file" className="text-white/30 text-3xl block mx-auto mb-2" />
-                <p className="text-xs font-mono text-slate-400">
-                  Click to attach files — max {MAX_FILES} files, 10MB each
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                    {attachedFiles.length >= MAX_FILES ? "Attachment limit reached" : "Upload evidence files"}
+                  </p>
+                  <span className="border border-white/20 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-300 transition-colors group-hover:border-white group-hover:text-white">
+                    Browse
+                  </span>
+                </div>
+                <p className="text-[10px] font-mono text-slate-500">
+                  Max {MAX_FILES} files, 10MB each.
                 </p>
-                <p className="text-[10px] font-mono text-slate-600 mt-1">
-                  Documents, images, audio — all encrypted in-browser before upload
+                <p className="mt-1 text-[10px] font-mono text-slate-600">
+                  Documents, images, audio - all encrypted in-browser before upload
                 </p>
               </div>
               <input
@@ -996,11 +1161,6 @@ export default function SubmitPage() {
                 </p>
               </div>
             </div>
-          )}
-          {rootAutoRegistered && (
-            <p className="bg-blue-900/30 border border-blue-500/30 p-3 text-xs text-blue-400">
-              ℹ Merkle root was auto-registered on-chain before submission — no admin needed.
-            </p>
           )}
           {submitSuccess && (
             <p className="bg-green-900/30 border border-green-500/30 p-3 text-xs text-green-400">

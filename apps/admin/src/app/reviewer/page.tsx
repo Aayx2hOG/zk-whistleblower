@@ -193,10 +193,21 @@ function ReportCard({ report, orgId, reviewerKey }: { report: Report; orgId: num
         <button
           className="btn-ghost text-xs px-4 py-2 shrink-0"
           onClick={handleDecrypt}
-          disabled={decryptStatus === "working" || decryptStatus === "done"}
+          disabled={!reviewerKey.trim() || decryptStatus === "working" || decryptStatus === "done"}
         >
-          {decryptStatus === "working" ? "Decrypting…" : decryptStatus === "done" ? "Decrypted ✓" : "Decrypt"}
+          {!reviewerKey.trim()
+            ? "Submit key first"
+            : decryptStatus === "working"
+              ? "Decrypting…"
+              : decryptStatus === "done"
+                ? "Decrypted ✓"
+                : "Decrypt"}
         </button>
+        {!reviewerKey.trim() && (
+          <p className="text-[10px] font-mono text-slate-500">
+            Submit your reviewer key above to enable decryption.
+          </p>
+        )}
         {decryptStatus === "done" && (
           <div className="space-y-3">
             <div className="bg-black/40 border border-green-500/30 p-3 text-xs font-mono text-green-300 whitespace-pre-wrap break-words">
@@ -248,7 +259,9 @@ export default function ReviewerPage() {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [reviewerKeyInput, setReviewerKeyInput] = useState("");
   const [reviewerKey, setReviewerKey] = useState("");
+  const [reviewerKeyTouchedAfterSubmit, setReviewerKeyTouchedAfterSubmit] = useState(false);
 
   const {
     data: reportCount,
@@ -425,9 +438,54 @@ export default function ReviewerPage() {
           className="input font-mono text-xs"
           type="password"
           placeholder="Enter your reviewer API key to decrypt reports"
-          value={reviewerKey}
-          onChange={(e) => setReviewerKey(e.target.value)}
+          value={reviewerKeyInput}
+          onChange={(e) => {
+            const next = e.target.value;
+            setReviewerKeyInput(next);
+            setReviewerKeyTouchedAfterSubmit(next.trim() !== reviewerKey.trim());
+          }}
         />
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="btn-ghost text-xs px-4 py-2"
+            onClick={() => {
+              const normalizedKey = reviewerKeyInput.trim();
+              setReviewerKey(normalizedKey);
+              setReviewerKeyInput(normalizedKey);
+              setReviewerKeyTouchedAfterSubmit(false);
+            }}
+            disabled={!reviewerKeyInput.trim()}
+          >
+            {reviewerKey ? "Update key" : "Submit key"}
+          </button>
+          {reviewerKey && (
+            <button
+              className="btn-ghost text-xs px-4 py-2"
+              onClick={() => {
+                setReviewerKey("");
+                setReviewerKeyInput("");
+                setReviewerKeyTouchedAfterSubmit(false);
+              }}
+            >
+              Clear key
+            </button>
+          )}
+        </div>
+        {!reviewerKey && (
+          <p className="text-[10px] font-mono text-slate-500">
+            Submit your reviewer key before decrypting reports.
+          </p>
+        )}
+        {reviewerKey && !reviewerKeyTouchedAfterSubmit && (
+          <p className="text-[10px] font-mono text-green-400">
+            Key submitted. You can now decrypt reports.
+          </p>
+        )}
+        {reviewerKeyTouchedAfterSubmit && (
+          <p className="text-[10px] font-mono text-yellow-400">
+            Key input changed. Click update key to apply it.
+          </p>
+        )}
         <p className="text-[10px] font-mono text-slate-600">
           This key is never stored — it lives only in memory while this page is open.
           Contact your org admin if you don't have one.

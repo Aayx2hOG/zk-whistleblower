@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   useWaitForTransactionReceipt,
   useWatchContractEvent,
@@ -15,6 +15,13 @@ import { generateSecret, type MemberKeyFile } from "@zk-whistleblower/shared/src
 import { encryptSecret, downloadJSON } from "@zk-whistleblower/shared/src/secretGen";
 import { getDemoMembers } from "@zk-whistleblower/shared/src/demoOrg";
 import { useOrg } from "@zk-whistleblower/ui";
+import {
+  getStoredMembers,
+  appendMembers,
+  removeStoredMember,
+  clearStoredMembers,
+  type StoredMember,
+} from "@zk-whistleblower/shared/src/adminMemberStore";
 
 
 interface RootEvent {
@@ -29,25 +36,29 @@ function TxStatus({
   hash,
   label,
   settled,
+  pending,
 }: {
   hash?: `0x${string}`;
   label: string;
   settled?: boolean;
+  pending?: boolean;
 }) {
   const { isLoading, isSuccess } = useWaitForTransactionReceipt({ hash });
-  if (!hash) return null;
-  if (settled) {
-    return (
-      <p className="mt-2 text-xs">
-        <span className="text-brand-500">✓ Confirmed!</span>
-      </p>
-    );
-  }
+  if (!hash && !pending) return null;
+
+  const isConfirmed = Boolean(settled || isSuccess);
+  const isSubmitting = Boolean(pending || (!isConfirmed && isLoading));
+
   return (
-    <p className="mt-2 text-xs">
-      {isLoading && <span className="text-yellow-400">⏳ {label}…</span>}
-      {isSuccess && <span className="text-brand-500">✓ Confirmed!</span>}
-    </p>
+    <div className="mt-2 space-y-1 text-xs font-mono">
+      {hash && (
+        <p className="text-slate-400 break-all">
+          TX_HASH: {hash}
+        </p>
+      )}
+      {isSubmitting && <p className="text-yellow-400"> {label}…</p>}
+      {isConfirmed && <p className="text-brand-500">✓ Confirmed!</p>}
+    </div>
   );
 }
 
@@ -73,6 +84,9 @@ export default function AdminPage() {
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState("");
   const [demoRootMsg, setDemoRootMsg] = useState("");
+
+  // Cumulative stored member state
+  const [storedMembers, setStoredMembers] = useState<StoredMember[]>([]);
 
   // Build tree output state (shared with step 2)
   const [builtRoot, setBuiltRoot] = useState<string>("");
@@ -107,6 +121,27 @@ export default function AdminPage() {
   const [setOrgPending, setSetOrgPending] = useState(false);
   const [setOrgError, setSetOrgError] = useState("");
   const [setOrgSuccess, setSetOrgSuccess] = useState("");
+
+  // ── Rehydrate cumulative members from localStorage on load / org switch ──
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const stored = getStoredMembers(selectedOrgId);
+      if (cancelled) return;
+      setStoredMembers(stored);
+
+      if (stored.length > 0) {
+        await initPoseidon();
+        if (cancelled) return;
+        const commitments = stored.map((m) => BigInt(m.commitment));
+        const { root } = buildMerkleTree(commitments);
+        setBuiltRoot(root.toString());
+        setAddRootInput(root.toString());
+      }
+    })().catch(() => {/* swallow */});
+
+    return () => { cancelled = true; };
+  }, [selectedOrgId]);
 
   useWatchContractEvent({
     address: REGISTRY_ADDRESS,
@@ -172,45 +207,83 @@ export default function AdminPage() {
       m.map((mem, idx) => (idx === i ? { ...mem, [field]: val } : mem))
     );
 
-  //  Secret generation 
+  //  Secret generation (cumulative – appends only, never regenerates existing)
   const handleGenerateSecrets = useCallback(async () => {
     setGenError("");
     setGenerated([]);
-    setBuiltRoot("");
     setGenerating(true);
     try {
       await initPoseidon();
-      const results: GeneratedMember[] = [];
-      for (const [idx, mem] of members.entries()) {
-        if (!mem.id.trim())
-          throw new Error(`Member at row ${idx + 1} has no ID`);
+
+      // Determine which input rows are genuinely new
+      const existingIds = new Set(
+        storedMembers.map((m) => m.memberId.toLowerCase())
+      );
+      const newInputs = members.filter(
+        (m) => m.id.trim() && !existingIds.has(m.id.trim().toLowerCase())
+      );
+
+      if (newInputs.length === 0) {
+        throw new Error(
+          "All entered IDs already exist in the stored member list. Add new IDs to extend."
+        );
+      }
+
+      const newGenerated: GeneratedMember[] = [];
+      const newStored: StoredMember[] = [];
+
+      for (const mem of newInputs) {
         const secret = generateSecret();
         const commitment = poseidonHash([secret]);
-        // Fall back to member ID as password when none provided
         const pwd = mem.password.trim() || mem.id.trim();
         const encrypted = await encryptSecret(secret, pwd);
-        results.push({
-          id: mem.id.trim(),
-          commitment: commitment.toString(),
-          leafIndex: idx,
+        const memberId = mem.id.trim();
+        const commitmentStr = commitment.toString();
+
+        newStored.push({
+          memberId,
+          commitment: commitmentStr,
+          encrypted,
+          createdAt: new Date().toISOString(),
+        });
+
+        newGenerated.push({
+          id: memberId,
+          commitment: commitmentStr,
+          leafIndex: -1, // will be recalculated below
           keyFile: {
-            memberId: mem.id.trim(),
-            commitment: commitment.toString(),
+            memberId,
+            commitment: commitmentStr,
             encrypted,
           },
         });
       }
-      setGenerated(results);
-      const commitments = results.map((r) => BigInt(r.commitment));
+
+      // Persist cumulatively
+      const cumulative = appendMembers(selectedOrgId, newStored);
+      setStoredMembers(cumulative);
+
+      // Assign correct leaf indices to the newly generated members
+      const cumulativeIds = cumulative.map((m) => m.memberId);
+      for (const g of newGenerated) {
+        g.leafIndex = cumulativeIds.indexOf(g.id);
+      }
+      setGenerated(newGenerated);
+
+      // Recompute root from ALL cumulative commitments
+      const commitments = cumulative.map((m) => BigInt(m.commitment));
       const { root } = buildMerkleTree(commitments);
       setBuiltRoot(root.toString());
       setAddRootInput(root.toString());
+
+      // Clear input rows since they've been processed
+      setMembers([{ id: "", password: "" }]);
     } catch (e: unknown) {
       setGenError(e instanceof Error ? e.message : String(e));
     } finally {
       setGenerating(false);
     }
-  }, [members]);
+  }, [members, storedMembers, selectedOrgId]);
 
   const handleDownloadKeyFile = (m: GeneratedMember) =>
     downloadJSON(m.keyFile, `${m.id}.json`);
@@ -218,13 +291,39 @@ export default function AdminPage() {
   const handleDownloadManifest = () =>
     downloadJSON(
       {
-        commitments: generated.map((m) => m.commitment),
+        commitments: storedMembers.map((m) => m.commitment),
         root: builtRoot,
-        memberCount: generated.length,
+        memberCount: storedMembers.length,
         treeDepth: 10,
       },
       "manifest.json"
     );
+
+  // Remove a stored member and recompute root
+  const handleRemoveStoredMember = useCallback(async (memberId: string) => {
+    removeStoredMember(selectedOrgId, memberId);
+    const updated = getStoredMembers(selectedOrgId);
+    setStoredMembers(updated);
+    if (updated.length > 0) {
+      await initPoseidon();
+      const commitments = updated.map((m) => BigInt(m.commitment));
+      const { root } = buildMerkleTree(commitments);
+      setBuiltRoot(root.toString());
+      setAddRootInput(root.toString());
+    } else {
+      setBuiltRoot("");
+      setAddRootInput("");
+    }
+  }, [selectedOrgId]);
+
+  // Clear all stored members
+  const handleClearStoredMembers = useCallback(() => {
+    clearStoredMembers(selectedOrgId);
+    setStoredMembers([]);
+    setBuiltRoot("");
+    setAddRootInput("");
+    setGenerated([]);
+  }, [selectedOrgId]);
 
   const handleLoadRootFromDemoJoin = useCallback(async () => {
     setDemoRootMsg("");
@@ -296,6 +395,7 @@ export default function AdminPage() {
   const handleAddRoot = async () => {
     if (!addRootInput) return;
     setAddError("");
+    setAddHash(undefined);
     setAddSettled(false);
     setAddPending(true);
     try {
@@ -315,6 +415,7 @@ export default function AdminPage() {
   const handleRevokeRoot = async () => {
     if (!revokeInput) return;
     setRevokeError("");
+    setRevokeHash(undefined);
     setRevokeSettled(false);
     setRevokePending(true);
     try {
@@ -418,9 +519,48 @@ export default function AdminPage() {
         <p className="text-xs text-slate-500 font-mono">
           Add member IDs and optional passwords. A random cryptographic secret
           is generated for each member, encrypted with their password, and
-          packaged into a downloadable key file. The Merkle root is computed
-          from commitments and auto-filled below.
+          packaged into a downloadable key file. Membership is <strong className="text-slate-300">cumulative</strong>:
+          new members are appended to the existing list; old keyfiles stay valid.
+          The Merkle root is recomputed from the full list.
         </p>
+
+        {/* ── Cumulative stored members summary ── */}
+        {storedMembers.length > 0 && (
+          <div className="bg-white/[0.03] border border-white/10 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="label">Stored Members ({storedMembers.length})</p>
+              <button
+                className="btn-danger text-[10px] px-3 py-1"
+                onClick={handleClearStoredMembers}
+              >
+                Clear All
+              </button>
+            </div>
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {storedMembers.map((m, idx) => (
+                <div
+                  key={m.memberId}
+                  className="flex items-center gap-3 bg-white/5 border border-white/10 p-2"
+                >
+                  <span className="font-mono text-[10px] text-slate-500 w-8 shrink-0">#{idx}</span>
+                  <span className="font-mono text-xs text-white flex-1 truncate">
+                    {m.memberId}
+                  </span>
+                  <span className="font-mono text-[10px] text-slate-600 truncate max-w-[140px]">
+                    {m.commitment.slice(0, 16)}…
+                  </span>
+                  <button
+                    className="text-red-500 hover:text-red-400 text-xs leading-none"
+                    onClick={() => handleRemoveStoredMember(m.memberId)}
+                    title="Remove stored member"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="bg-white/[0.03] border border-white/10 p-4 space-y-3">
           <p className="label">Use Join Org demo list</p>
@@ -492,13 +632,13 @@ export default function AdminPage() {
 
         {generated.length > 0 && (
           <>
-            {/* Per-member results */}
+            {/* Newly generated members (this batch) */}
             <div className="space-y-1">
-              <p className="label">Generated members</p>
+              <p className="label">Newly generated members</p>
               {generated.map((m) => (
                 <div
                   key={m.id}
-                  className="flex items-center gap-3 bg-white/5 border border-white/10 p-3"
+                  className="flex items-center gap-3 bg-green-900/20 border border-green-500/20 p-3"
                 >
                   <span className="font-mono text-xs text-white w-20 shrink-0 truncate">
                     #{m.leafIndex} {m.id}
@@ -515,14 +655,18 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
+          </>
+        )}
 
-            {/* Manifest + computed root */}
+        {/* Manifest + computed root — show whenever we have stored members */}
+        {storedMembers.length > 0 && (
+          <>
             <div className="flex gap-3">
               <button
                 className="btn-ghost flex-1"
                 onClick={handleDownloadManifest}
               >
-                ↓ Download manifest.json
+                ↓ Download manifest.json ({storedMembers.length} members)
               </button>
             </div>
             <p className="text-[10px] font-mono text-slate-600">
@@ -536,7 +680,7 @@ export default function AdminPage() {
             {builtRoot && (
               <div className="bg-white/5 border border-white/10 p-4">
                 <p className="text-[10px] font-mono text-slate-400 mb-2">
-                  COMPUTED_MERKLE_ROOT
+                  COMPUTED_MERKLE_ROOT ({storedMembers.length} total members)
                 </p>
                 <p className="break-all font-mono text-xs text-white">
                   {builtRoot}
@@ -576,7 +720,7 @@ export default function AdminPage() {
         >
           {addPending ? "Submitting…" : "Add Root"}
         </button>
-        <TxStatus hash={addHash} label="Adding root" settled={addSettled} />
+        <TxStatus hash={addHash} label="Adding root" settled={addSettled} pending={addPending} />
         {addError && (
           <p className="bg-red-900/30 border border-red-500/30 p-3 text-xs text-red-400">
             {addError}
@@ -610,7 +754,7 @@ export default function AdminPage() {
         >
           {revokePending ? "Submitting…" : "Revoke Root"}
         </button>
-        <TxStatus hash={revokeHash} label="Revoking root" settled={revokeSettled} />
+        <TxStatus hash={revokeHash} label="Revoking root" settled={revokeSettled} pending={revokePending} />
         {revokeError && (
           <p className="bg-red-900/30 border border-red-500/30 p-3 text-xs text-red-400">
             {revokeError}

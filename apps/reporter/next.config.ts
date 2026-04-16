@@ -13,8 +13,8 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(__dirname, "../.."),
   env: resolvedPublicKey
     ? {
-        NEXT_PUBLIC_REPORT_RSA_PUBLIC_KEY_B64: resolvedPublicKey,
-      }
+      NEXT_PUBLIC_REPORT_RSA_PUBLIC_KEY_B64: resolvedPublicKey,
+    }
     : undefined,
   experimental: {
     optimizePackageImports: [

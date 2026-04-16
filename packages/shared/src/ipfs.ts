@@ -24,52 +24,58 @@ function validateCid(cid: string): void {
   }
 }
 
-export async function uploadEncryptedReport(blob: EncryptedBlob): Promise<string> {
+async function readApiErrorMessage(res: Response): Promise<string> {
+  const contentType = res.headers.get("content-type") ?? "";
+
+  try {
+    if (contentType.includes("application/json")) {
+      const data = (await res.json()) as { error?: unknown; message?: unknown };
+      if (typeof data.error === "string" && data.error.trim()) {
+        return data.error.trim();
+      }
+      if (typeof data.message === "string" && data.message.trim()) {
+        return data.message.trim();
+      }
+      return JSON.stringify(data);
+    }
+
+    const text = (await res.text()).trim();
+    return text || "No error response body";
+  } catch {
+    return "Could not parse error response";
+  }
+}
+
+async function uploadViaApi(payload: unknown, failurePrefix: string): Promise<string> {
   const res = await fetch("/api/upload", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(blob),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Upload failed (${res.status}): ${text}`);
+    const message = await readApiErrorMessage(res);
+    throw new Error(`${failurePrefix} (${res.status}): ${message}`);
   }
 
-  const data = (await res.json()) as { cid: string };
+  const data = (await res.json()) as { cid?: unknown };
+  if (typeof data.cid !== "string" || !data.cid.trim()) {
+    throw new Error("Upload succeeded but no CID was returned.");
+  }
+
   return data.cid;
+}
+
+export async function uploadEncryptedReport(blob: EncryptedBlob): Promise<string> {
+  return uploadViaApi(blob, "Upload failed");
 }
 
 export async function uploadEncryptedFile(blob: EncryptedFileBlob): Promise<string> {
-  const res = await fetch("/api/upload", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(blob),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`File upload failed (${res.status}): ${text}`);
-  }
-
-  const data = (await res.json()) as { cid: string };
-  return data.cid;
+  return uploadViaApi(blob, "File upload failed");
 }
 
 export async function uploadManifest(manifest: ReportManifest): Promise<string> {
-  const res = await fetch("/api/upload", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(manifest),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Manifest upload failed (${res.status}): ${text}`);
-  }
-
-  const data = (await res.json()) as { cid: string };
-  return data.cid;
+  return uploadViaApi(manifest, "Manifest upload failed");
 }
 
 export async function fetchFromIPFS(cid: string): Promise<EncryptedBlob> {
