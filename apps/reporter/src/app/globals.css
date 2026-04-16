@@ -20,6 +20,7 @@ body {
   background-size: 80px 80px;
 }
 
+@layer components {
 
 .card {
   @apply border border-white/10 bg-white/[0.02] p-8;
@@ -63,4 +64,6 @@ body {
 /* Section heading */
 .section-heading {
   @apply text-xl font-black uppercase text-white;
+}
+
 }

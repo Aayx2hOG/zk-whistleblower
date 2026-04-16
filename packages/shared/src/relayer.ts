@@ -46,8 +46,7 @@ async function relayTx(body: RelayRequest): Promise<RelayResponse> {
     const headers: Record<string, string> = {
         "Content-Type": "application/json",
     };
-    const apiKey = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
-        ?.NEXT_PUBLIC_RELAY_API_KEY;
+    const apiKey = process.env.NEXT_PUBLIC_RELAY_API_KEY;
     if (apiKey) {
         headers["x-api-key"] = apiKey;
     }
