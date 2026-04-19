@@ -130,6 +130,7 @@ export async function POST(req: NextRequest) {
           mimeType: f.mimeType,
           originalSize: f.originalSize,
         })),
+        ...(manifest.recipient && { recipient: manifest.recipient }),
       });
     }
 

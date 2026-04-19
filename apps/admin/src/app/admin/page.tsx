@@ -13,6 +13,7 @@ import { initPoseidon, poseidonHash } from "@zk-whistleblower/shared/src/poseido
 import { buildMerkleTree } from "@zk-whistleblower/shared/src/merkle";
 import { generateSecret, type MemberKeyFile } from "@zk-whistleblower/shared/src/secretGen";
 import { encryptSecret, downloadJSON } from "@zk-whistleblower/shared/src/secretGen";
+import { getLeagues } from "@zk-whistleblower/shared/src/leagueStore";
 
 import { useOrg } from "@zk-whistleblower/ui";
 import {
@@ -288,16 +289,21 @@ export default function AdminPage() {
   const handleDownloadKeyFile = (m: GeneratedMember) =>
     downloadJSON(m.keyFile, `${m.id}.json`);
 
-  const handleDownloadManifest = () =>
+  const handleDownloadManifest = () => {
+    const leagues = getLeagues(selectedOrgId);
     downloadJSON(
       {
         commitments: storedMembers.map((m) => m.commitment),
         root: builtRoot,
         memberCount: storedMembers.length,
         treeDepth: 10,
+        ...(leagues.length > 0 && {
+          leagues: leagues.map((l) => ({ id: l.id, name: l.name })),
+        }),
       },
       "manifest.json"
     );
+  };
 
   // Remove a stored member and recompute root
   const handleRemoveStoredMember = useCallback(async (memberId: string) => {

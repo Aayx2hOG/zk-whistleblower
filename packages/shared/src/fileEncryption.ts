@@ -28,6 +28,8 @@ export interface ReportManifest {
   textCid: string;
   files: FileAttachmentMeta[];
   createdAt: string;
+  /** Role/league this report is directed to (e.g. "HR", "Ethics Board") */
+  recipient?: { id: string; name: string };
 }
 
 function toBase64(buf: ArrayBuffer | Uint8Array): string {

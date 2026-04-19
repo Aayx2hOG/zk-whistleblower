@@ -100,6 +100,8 @@ export default function SubmitPage() {
   const [reportText, setReportText] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [availableLeagues, setAvailableLeagues] = useState<{ id: string; name: string }[]>([]);
+  const [selectedRecipient, setSelectedRecipient] = useState(""); // league id or "" for general
 
   // Global Submission State
   const [submitPhase, setSubmitPhase] = useState<"idle" | "encrypting" | "anonymizing" | "sending" | "success" | "error">("idle");
@@ -141,6 +143,17 @@ export default function SubmitPage() {
         });
         if (commitments.length === 0) throw new Error("File has no data.");
         setOrgSecrets(commitments.join("\n"));
+        
+        // Extract available leagues/roles from manifest
+        if (Array.isArray(parsed.leagues) && parsed.leagues.length > 0) {
+          const leagues = parsed.leagues
+            .filter((l): l is { id: string; name: string } => 
+              typeof l === 'object' && l !== null && typeof l.id === 'string' && typeof l.name === 'string'
+            );
+          setAvailableLeagues(leagues);
+        } else {
+          setAvailableLeagues([]);
+        }
         
         // Auto leaf index resolution if key file is already loaded
         if (keyFileJson.trim()) {
@@ -226,7 +239,12 @@ export default function SubmitPage() {
     setSubmitProgress("Uploading encrypted data...");
     const textCid = await uploadEncryptedReport(textBlob);
 
-    if (attachedFiles.length === 0) return textCid;
+    // Determine recipient metadata
+    const recipientMeta = selectedRecipient
+        ? availableLeagues.find(l => l.id === selectedRecipient) ?? undefined
+        : undefined;
+
+    if (attachedFiles.length === 0 && !recipientMeta) return textCid;
 
     const fileMetas: ReportManifest["files"] = [];
     for (let i = 0; i < attachedFiles.length; i++) {
@@ -240,7 +258,14 @@ export default function SubmitPage() {
     }
     
     setSubmitProgress("Generating data manifest...");
-    const manifest: ReportManifest = { v: 1, type: "manifest", textCid, files: fileMetas, createdAt: new Date().toISOString() };
+    const manifest: ReportManifest = {
+        v: 1,
+        type: "manifest",
+        textCid,
+        files: fileMetas,
+        createdAt: new Date().toISOString(),
+        ...(recipientMeta && { recipient: recipientMeta }),
+    };
     return await uploadManifest(manifest);
   };
 
@@ -464,8 +489,8 @@ export default function SubmitPage() {
                 
                 {keyFileJson && keyImportStatus !== "done" && (
                     <div className="flex gap-2 w-full pt-2">
-                        <input className="input flex-1 text-sm py-2.5 px-3 bg-white/5 focus:bg-white/10" type="password" placeholder="Access password" value={keyFilePassword} onChange={(e) => setKeyFilePassword(e.target.value)} />
-                        <button className="btn-primary text-sm px-6 py-2.5 shrink-0" onClick={handleDecryptKeyFile}>Unlock</button>
+                        <input className="input flex-1 text-xs px-3 h-8 bg-white/5 focus:bg-white/10" type="password" placeholder="Access password" value={keyFilePassword} onChange={(e) => setKeyFilePassword(e.target.value)} />
+                        <button className="btn-primary text-xs px-4 h-8 shrink-0 flex items-center justify-center" onClick={handleDecryptKeyFile}>Unlock</button>
                     </div>
                 )}
                 {keyImportError && <p className="text-[10px] text-red-400 font-mono">{keyImportError}</p>}
@@ -508,11 +533,31 @@ export default function SubmitPage() {
         </div>
 
         <div className="space-y-5">
-            <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2 block">Category of Concern</label>
-                <select className="input bg-primary text-sm w-full py-3" value={category} onChange={(e) => setCategory(Number(e.target.value) as 0|1|2|3)}>
-                  {CATEGORIES.map((c, i) => <option key={i} value={i}>{c}</option>)}
-                </select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2 block">Category of Concern</label>
+                    <select className="input bg-primary text-sm w-full py-3" value={category} onChange={(e) => setCategory(Number(e.target.value) as 0|1|2|3)}>
+                      {CATEGORIES.map((c, i) => <option key={i} value={i}>{c}</option>)}
+                    </select>
+                </div>
+                <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2 block">Send Report To</label>
+                    <select 
+                        className="input bg-primary text-sm w-full py-3" 
+                        value={selectedRecipient} 
+                        onChange={(e) => setSelectedRecipient(e.target.value)}
+                    >
+                        <option value="">All Administrators (General)</option>
+                        {availableLeagues.map((l) => (
+                            <option key={l.id} value={l.id}>{l.name}</option>
+                        ))}
+                    </select>
+                    <p className="mt-1 text-[9px] font-mono text-slate-600">
+                        {availableLeagues.length > 0
+                            ? "Choose which team should receive this report"
+                            : "No specific departments configured — report goes to all admins"}
+                    </p>
+                </div>
             </div>
             
             <div>
@@ -574,7 +619,17 @@ export default function SubmitPage() {
                 </div>
                 <div>
                    <h3 className="text-green-400 text-lg font-black uppercase tracking-widest mb-2">Report Successfully Submitted</h3>
-                   <p className="text-xs font-mono text-slate-300 leading-relaxed max-w-sm mx-auto">Your evidence has been securely encrypted and irrevocably stored on the blockchain without any metadata linking it to you.</p>
+                   <p className="text-xs font-mono text-slate-300 leading-relaxed max-w-sm mx-auto">
+                       Your evidence has been securely encrypted and irrevocably stored on the blockchain without any metadata linking it to you.
+                   </p>
+                   {selectedRecipient && (() => {
+                       const league = availableLeagues.find(l => l.id === selectedRecipient);
+                       return league ? (
+                           <p className="text-xs font-mono text-purple-400 mt-2">
+                               Directed to: <strong>{league.name}</strong>
+                           </p>
+                       ) : null;
+                   })()}
                 </div>
                 {submittedTxHash && (
                     <div className="mt-4 p-3 bg-black/40 rounded border border-white/5 inline-block text-left">

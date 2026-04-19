@@ -20,6 +20,8 @@ export interface MemberManifest {
   root: string;
   memberCount: number;
   treeDepth: number;
+  /** Admin-defined recipient roles/leagues (e.g. "HR", "Ethics Board") */
+  leagues?: { id: string; name: string }[];
 }
 
 function bytesToHex(buf: Uint8Array): string {
