@@ -1,27 +1,6 @@
 import Link from "next/link";
 import { Icon } from "@zk-whistleblower/ui";
 
-const CARDS = [
-  {
-    href: "/join",
-    icon: "group_add",
-    step: "00",
-    title: "Join Org",
-    description:
-      "Generate your secret and commitment locally, then join the shared demo membership list used for ZK proofs.",
-    action: "JOIN DEMO",
-  },
-  {
-    href: "/submit",
-    icon: "lock",
-    step: "01",
-    title: "Submit Anonymously",
-    description:
-      "Prove you are a member without revealing your identity. Generate a ZK proof locally, then submit your encrypted report.",
-    action: "SUBMIT REPORT",
-  },
-];
-
 export default function HomePage() {
   return (
     <div className="space-y-12">
@@ -69,31 +48,32 @@ export default function HomePage() {
         </ol>
       </section>
 
-      {/* page links */}
-      <section className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {CARDS.map(({ href, icon, step, title, description, action }) => (
+      {/* Action CTA */}
+      <section>
           <Link
-            key={href}
-            href={href}
-            className="card flex flex-col gap-4 hover:border-white/30 transition-colors group"
+            href="/submit"
+            className="card flex flex-col gap-5 hover:border-white/30 transition-all duration-300 hover:bg-white/[0.03] hover:-translate-y-1 group"
           >
             <div className="flex justify-between items-start">
-              <p className="text-[10px] font-mono text-white/40">{step}_MODULE</p>
-              <Icon name={icon} className="text-white/20 group-hover:text-white/40 transition-colors text-2xl" />
+              <p className="text-[10px] font-mono text-white/40">01_MODULE</p>
+              <Icon name="lock" className="text-white/20 group-hover:text-white/40 transition-colors text-3xl" />
             </div>
             <div>
-              <h3 className="font-black text-white uppercase text-lg">{title}</h3>
-              <p className="mt-2 text-xs text-slate-400 leading-relaxed">{description}</p>
+              <h3 className="font-black text-white uppercase text-2xl">Submit Anonymously</h3>
+              <p className="mt-2 text-sm text-slate-400 leading-relaxed max-w-xl">
+                Prove you are a member without revealing your identity. Generate a ZK proof locally, then submit your encrypted report to the blockchain.
+              </p>
             </div>
-            <span className="mt-auto text-xs font-black text-white uppercase tracking-widest border-t border-white/10 pt-3">
-              {action} →
-            </span>
+            <div className="mt-2 border-t border-white/10 pt-4">
+              <span className="inline-block text-sm font-black text-white uppercase tracking-widest group-hover:translate-x-2 transition-transform">
+                SUBMIT REPORT →
+              </span>
+            </div>
           </Link>
-        ))}
       </section>
 
       {/* footer */}
-      <p className="text-center text-[10px] font-mono text-slate-500 uppercase tracking-widest">
+      <p className="text-center text-[10px] font-mono text-slate-500 uppercase tracking-widest mt-8">
         Warning: All submissions are irreversible once broadcast to the network.
       </p>
     </div>
