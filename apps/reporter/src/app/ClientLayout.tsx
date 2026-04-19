@@ -3,7 +3,6 @@
 import { Providers, OrgProvider, Navbar, Sidebar, type NavItem } from "@zk-whistleblower/ui";
 
 const REPORTER_NAV_ITEMS: NavItem[] = [
-  { href: "/join", icon: "group_add", label: "Join Org" },
   { href: "/submit", icon: "terminal", label: "Submit Report" },
 ];
 

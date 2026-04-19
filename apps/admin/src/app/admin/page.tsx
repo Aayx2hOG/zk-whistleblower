@@ -13,7 +13,7 @@ import { initPoseidon, poseidonHash } from "@zk-whistleblower/shared/src/poseido
 import { buildMerkleTree } from "@zk-whistleblower/shared/src/merkle";
 import { generateSecret, type MemberKeyFile } from "@zk-whistleblower/shared/src/secretGen";
 import { encryptSecret, downloadJSON } from "@zk-whistleblower/shared/src/secretGen";
-import { getDemoMembers } from "@zk-whistleblower/shared/src/demoOrg";
+
 import { useOrg } from "@zk-whistleblower/ui";
 import {
   getStoredMembers,
@@ -83,7 +83,7 @@ export default function AdminPage() {
   const [generated, setGenerated] = useState<GeneratedMember[]>([]);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState("");
-  const [demoRootMsg, setDemoRootMsg] = useState("");
+
 
   // Cumulative stored member state
   const [storedMembers, setStoredMembers] = useState<StoredMember[]>([]);
@@ -325,26 +325,7 @@ export default function AdminPage() {
     setGenerated([]);
   }, [selectedOrgId]);
 
-  const handleLoadRootFromDemoJoin = useCallback(async () => {
-    setDemoRootMsg("");
-    setGenError("");
 
-    try {
-      await initPoseidon();
-      const demoMembers = getDemoMembers(selectedOrgId);
-      if (!demoMembers.length) {
-        throw new Error("No demo members found. Add users on Join Org page first.");
-      }
-
-      const commitments = demoMembers.map((m) => BigInt(m.commitment));
-      const { root } = buildMerkleTree(commitments);
-      setBuiltRoot(root.toString());
-      setAddRootInput(root.toString());
-      setDemoRootMsg(`Loaded ${demoMembers.length} demo members and computed root.`);
-    } catch (e: unknown) {
-      setDemoRootMsg(e instanceof Error ? e.message : String(e));
-    }
-  }, [selectedOrgId]);
 
   const handleCreateOrganization = async () => {
     setCreateOrgError("");
@@ -512,17 +493,17 @@ export default function AdminPage() {
       <section className="card space-y-6">
         <div className="flex justify-between items-start mb-2">
           <div>
-            <p className="step-label">01_MEMBER_REGISTRATION</p>
-            <h2 className="section-heading">Generate Member Secrets</h2>
+            <p className="step-label">01_ACCESS_CREDENTIALS</p>
+            <h2 className="section-heading">Issue Access Credentials</h2>
           </div>
           <Icon name="group_add" className="text-white/20 text-2xl" />
         </div>
         <p className="text-xs text-slate-500 font-mono">
-          Add member IDs and optional passwords. A random cryptographic secret
-          is generated for each member, encrypted with their password, and
-          packaged into a downloadable key file. Membership is <strong className="text-slate-300">cumulative</strong>:
-          new members are appended to the existing list; old keyfiles stay valid.
-          The Merkle root is recomputed from the full list.
+          Add member IDs and an optional password. A secure access credential
+          is generated for each member and packaged into a downloadable key file.
+          Membership here is <strong className="text-slate-300">cumulative</strong>:
+          new members are appended to your existing organization list. 
+          The cryptographic access checksum is updated automatically.
         </p>
 
         {/* ── Cumulative stored members summary ── */}
@@ -563,18 +544,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        <div className="bg-white/[0.03] border border-white/10 p-4 space-y-3">
-          <p className="label">Use Join Org demo list</p>
-          <p className="text-[10px] font-mono text-slate-600">
-            For the demo flow, compute root from members in active org {selectedOrgId}.
-          </p>
-          <button className="btn-ghost text-xs px-4 py-2" onClick={handleLoadRootFromDemoJoin}>
-            Load Root From Join Org
-          </button>
-          {demoRootMsg && (
-            <p className="text-[10px] font-mono text-slate-400">{demoRootMsg}</p>
-          )}
-        </div>
+
 
         {/* Member rows */}
         <div className="space-y-2">
@@ -621,7 +591,7 @@ export default function AdminPage() {
             onClick={handleGenerateSecrets}
             disabled={generating || !members.some((m) => m.id.trim())}
           >
-            {generating ? "Generating…" : "Generate Secrets"}
+            {generating ? "Issuing Credentials…" : "Issue Credentials"}
           </button>
         </div>
 
@@ -667,27 +637,26 @@ export default function AdminPage() {
                 className="btn-ghost flex-1"
                 onClick={handleDownloadManifest}
               >
-                ↓ Download manifest.json ({storedMembers.length} members)
+                ↓ Download Organization Directory (manifest.json)
               </button>
             </div>
             <p className="text-[10px] font-mono text-slate-600">
-              Share each <span className="text-slate-400">{'<id>.json'}</span> with
-              the corresponding member (they decrypt it with their password to
-              retrieve their secret). Share{" "}
-              <span className="text-slate-400">manifest.json</span> with all
-              members so they can rebuild the Merkle path on the Submit page.
+              Share the <span className="text-slate-400">Personal Access File (.json)</span> with
+              the corresponding member privately. Share the{" "}
+              <span className="text-slate-400">Organization Directory (manifest.json)</span> securely with all
+              members so they can authenticate securely on the reporter application.
             </p>
 
             {builtRoot && (
               <div className="bg-white/5 border border-white/10 p-4">
                 <p className="text-[10px] font-mono text-slate-400 mb-2">
-                  COMPUTED_MERKLE_ROOT ({storedMembers.length} total members)
+                  COMPUTED ACCESS CHECKSUM ({storedMembers.length} active members)
                 </p>
                 <p className="break-all font-mono text-xs text-white">
                   {builtRoot}
                 </p>
                 <p className="mt-2 text-[10px] font-mono text-slate-500">
-                  ↳ Automatically filled into the Register Root field below.
+                  ↳ This checksum guarantees your organization's valid members. It is automatically filled below.
                 </p>
               </div>
             )}
@@ -699,13 +668,13 @@ export default function AdminPage() {
       <section className="card space-y-6">
         <div className="flex justify-between items-start mb-2">
           <div>
-            <p className="step-label">02_REGISTRATION</p>
-            <h2 className="section-heading">Register Root On-Chain</h2>
+            <p className="step-label">02_SYNC_NETWORK</p>
+            <h2 className="section-heading">Sync Access List (On-Chain)</h2>
           </div>
           <Icon name="add_circle" className="text-white/20 text-2xl" />
         </div>
         <div>
-          <label className="label">Merkle root (decimal)</label>
+          <label className="label">Access list checksum (Merkle root)</label>
           <input
             className="input font-mono text-xs"
             placeholder="Paste root value or build from Step 1"
@@ -719,9 +688,9 @@ export default function AdminPage() {
           onClick={handleAddRoot}
           disabled={addPending || !addRootInput}
         >
-          {addPending ? "Submitting…" : "Add Root"}
+          {addPending ? "Syncing Network…" : "Sync Access List"}
         </button>
-        <TxStatus hash={addHash} label="Adding root" settled={addSettled} pending={addPending} />
+        <TxStatus hash={addHash} label="Syncing list" settled={addSettled} pending={addPending} />
         {addError && (
           <p className="bg-red-900/30 border border-red-500/30 p-3 text-xs text-red-400">
             {addError}
@@ -734,12 +703,12 @@ export default function AdminPage() {
         <div className="flex justify-between items-start mb-2">
           <div>
             <p className="step-label">03_REVOCATION</p>
-            <h2 className="section-heading">Revoke A Root</h2>
+            <h2 className="section-heading">Revoke Access List</h2>
           </div>
           <Icon name="delete_forever" className="text-white/20 text-2xl" />
         </div>
         <div>
-          <label className="label">Root to revoke (decimal)</label>
+          <label className="label">Checksum to revoke (decimal)</label>
           <input
             className="input font-mono text-xs"
             placeholder="Enter the root value"
@@ -753,9 +722,9 @@ export default function AdminPage() {
           onClick={handleRevokeRoot}
           disabled={revokePending || !revokeInput}
         >
-          {revokePending ? "Submitting…" : "Revoke Root"}
+          {revokePending ? "Revoking…" : "Revoke List"}
         </button>
-        <TxStatus hash={revokeHash} label="Revoking root" settled={revokeSettled} pending={revokePending} />
+        <TxStatus hash={revokeHash} label="Revoking list" settled={revokeSettled} pending={revokePending} />
         {revokeError && (
           <p className="bg-red-900/30 border border-red-500/30 p-3 text-xs text-red-400">
             {revokeError}

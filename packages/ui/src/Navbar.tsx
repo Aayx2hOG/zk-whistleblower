@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useOrg } from "./OrgProvider";
 import { useEffect, useState } from "react";
 
-export default function Navbar() {
+interface NavbarProps {
+  showWallet?: boolean;
+}
+
+export default function Navbar({ showWallet = false }: NavbarProps) {
   const { selectedOrgId } = useOrg();
   const [ConnectButton, setConnectButton] = useState<React.ComponentType<{
     showBalance?: boolean;
@@ -14,11 +18,12 @@ export default function Navbar() {
   }> | null>(null);
 
   useEffect(() => {
+    if (!showWallet) return;
     void (async () => {
       const { ConnectButton: CB } = await import("@rainbow-me/rainbowkit");
       setConnectButton(() => CB);
     })();
-  }, []);
+  }, [showWallet]);
 
   return (
     <header className="flex items-center justify-between border-b border-white/10 px-6 py-4 md:px-12 bg-primary">
@@ -43,7 +48,7 @@ export default function Navbar() {
         </span>
 
         {/* Wallet connect button */}
-        {ConnectButton && (
+        {showWallet && ConnectButton && (
           <ConnectButton
             showBalance={false}
             chainStatus="icon"

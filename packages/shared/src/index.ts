@@ -1,5 +1,5 @@
 export * from "./contracts";
-export * from "./demoOrg";
+
 export * from "./encryption";
 export * from "./epoch";
 export * from "./fileEncryption";
