@@ -5,7 +5,7 @@ import {
   useWaitForTransactionReceipt,
   useWatchContractEvent,
 } from "wagmi";
-import { Icon } from "@zk-whistleblower/ui";
+import { Icon, AdminGate } from "@zk-whistleblower/ui";
 import { REGISTRY_ABI, REGISTRY_ADDRESS } from "@zk-whistleblower/shared/src/contracts";
 import { relayAddRootForOrg } from "@zk-whistleblower/shared/src/relayer";
 import { relayCreateOrganization, relayRevokeRootForOrg, relaySetOrganizationActive } from "@zk-whistleblower/shared/src/relayer";
@@ -433,6 +433,7 @@ export default function AdminPage() {
   };
 
   return (
+    <AdminGate>
     <div className="space-y-12">
       <div className="mb-8">
         <h1 className="text-white text-4xl font-black leading-none tracking-tighter mb-3 uppercase italic">
@@ -796,5 +797,6 @@ export default function AdminPage() {
         </section>
       )}
     </div>
+    </AdminGate>
   );
 }

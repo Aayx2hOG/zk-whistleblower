@@ -12,6 +12,7 @@ const activeChains =
 export default function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
   const [wagmiConfig, setWagmiConfig] = useState<WagmiConfig | null>(null);
+  const [RainbowKitProvider, setRainbowKitProvider] = useState<React.ComponentType<{ children: ReactNode }> | null>(null);
 
   // Create the wagmi/rainbowkit config on the client only.
   // This avoids SSR crashes from WalletConnect attempting to access `indexedDB`.
@@ -19,8 +20,13 @@ export default function Providers({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     void (async () => {
-      const { getDefaultConfig } = await import("@rainbow-me/rainbowkit");
-      const cfg = getDefaultConfig({
+      const [rainbowkit, rainbowkitStyles] = await Promise.all([
+        import("@rainbow-me/rainbowkit"),
+        import("@rainbow-me/rainbowkit/styles.css"),
+      ]);
+      void rainbowkitStyles; // side-effect import for CSS
+
+      const cfg = rainbowkit.getDefaultConfig({
         appName: "ZK Whistleblower",
         projectId:
           process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "placeholder_dev_id",
@@ -28,7 +34,10 @@ export default function Providers({ children }: { children: ReactNode }) {
         ssr: false,
       }) as WagmiConfig;
 
-      if (!cancelled) setWagmiConfig(cfg);
+      if (!cancelled) {
+        setWagmiConfig(cfg);
+        setRainbowKitProvider(() => rainbowkit.RainbowKitProvider);
+      }
     })();
 
     return () => {
@@ -37,11 +46,13 @@ export default function Providers({ children }: { children: ReactNode }) {
   }, []);
 
   // Mount guard: prevents wagmi hooks from executing during SSR / before hydration.
-  if (!wagmiConfig) return null;
+  if (!wagmiConfig || !RainbowKitProvider) return null;
 
   return (
     <QueryClientProvider client={queryClient}>
-      <WagmiProvider config={wagmiConfig}>{children}</WagmiProvider>
+      <WagmiProvider config={wagmiConfig}>
+        <RainbowKitProvider>{children}</RainbowKitProvider>
+      </WagmiProvider>
     </QueryClientProvider>
   );
 }

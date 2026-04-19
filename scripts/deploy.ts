@@ -40,8 +40,14 @@ async function main() {
     console.log("WhistleblowerRegistry:", registryAddr);
 
     // Save addresses for both app env files in the monorepo.
-    // @ts-ignore
-    const networkName = network.name ?? process.env.HARDHAT_NETWORK ?? "localhost";
+    const chain = await ethers.provider.getNetwork();
+    const chainId = Number(chain.chainId);
+    const networkName =
+        chainId === 11155111
+            ? "sepolia"
+            : chainId === 31337
+              ? "localhost"
+              : process.env.HARDHAT_NETWORK ?? (network as { name?: string }).name ?? String(chainId);
     const adminEnvPath = resolve(import.meta.dirname, "../apps/admin/.env.local");
     const reporterEnvPath = resolve(import.meta.dirname, "../apps/reporter/.env.local");
 

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useReadContract, useWatchContractEvent } from "wagmi";
-import { Icon } from "@zk-whistleblower/ui";
+import { Icon, AdminGate } from "@zk-whistleblower/ui";
 import { REGISTRY_ABI, REGISTRY_ADDRESS } from "@zk-whistleblower/shared/src/contracts";
 import {
   relayGrantOrgAdmin,
@@ -242,6 +242,7 @@ function AdminsPageInner() {
   const leagueMap = Object.fromEntries(leagues.map((l) => [l.id, l.name]));
 
   return (
+    <AdminGate>
     <div className="space-y-10">
       {/* ── Header ── */}
       <div>
@@ -518,6 +519,7 @@ function AdminsPageInner() {
         </section>
       )}
     </div>
+    </AdminGate>
   );
 }
 

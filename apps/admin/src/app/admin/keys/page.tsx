@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AdminGate } from "@zk-whistleblower/ui";
 
 interface OrgKeyRow {
   orgId: string;
@@ -82,6 +83,7 @@ export default function AdminKeysPage() {
   };
 
   return (
+    <AdminGate>
     <div className="space-y-8">
       <div>
         <h1 className="text-white text-4xl font-black leading-none tracking-tighter mb-3 uppercase italic">
@@ -157,5 +159,6 @@ export default function AdminKeysPage() {
         </p>
       </section>
     </div>
+    </AdminGate>
   );
 }

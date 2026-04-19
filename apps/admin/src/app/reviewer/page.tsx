@@ -1,6 +1,6 @@
 "use client";
 
-import { Icon } from "@zk-whistleblower/ui";
+import { Icon, AdminGate } from "@zk-whistleblower/ui";
 
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -401,6 +401,7 @@ export default function ReviewerPage() {
   });
 
   return (
+    <AdminGate>
     <div className="space-y-12">
       <div className="flex items-center justify-between">
         <div>
@@ -522,5 +523,6 @@ export default function ReviewerPage() {
         </p>
       )}
     </div>
+    </AdminGate>
   );
 }
