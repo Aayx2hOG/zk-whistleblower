@@ -201,15 +201,6 @@ importers:
         specifier: ~5.8.3
         version: 5.8.3
 
-  frontend:
-    dependencies:
-      '@types/node':
-        specifier: ^25.5.2
-        version: 25.5.2
-      node:
-        specifier: ^25.9.0
-        version: 25.9.0
-
   packages/shared:
     dependencies:
       circomlibjs:
@@ -1764,9 +1755,6 @@ packages:
 
   '@types/node@22.7.5':
     resolution: {integrity: sha512-jML7s2NAzMWc//QSJ1a3prpk78cOPchGvXJsC3C6R6PSMoooztvRVQEz89gmBTBY1SPMaqo5teB4uNHPdetShQ==}
-
-  '@types/node@25.5.2':
-    resolution: {integrity: sha512-tO4ZIRKNC+MDWV4qKVZe3Ql/woTnmHDr5JD8UI5hn2pwBrHEwOEMZK7WlNb5RKB6EoJ02gwmQS9OrjuFnZYdpg==}
 
   '@types/prettier@2.7.3':
     resolution: {integrity: sha512-+68kP9yzs4LMp7VNh8gdzMSPZFL44MLGqiHWvttYJe+6qnuVr4Ek9wSBQoveqY/r+LwjCcU29kNVkidwim+kYA==}
@@ -3454,9 +3442,6 @@ packages:
   node-addon-api@3.2.1:
     resolution: {integrity: sha512-mmcei9JghVNDYydghQmeDX8KoAm0FAiYyIcUt/N4nhyAipB17pllZQDOJD2fotxABnt4Mdz+dKTO7eftLg4d0A==}
 
-  node-bin-setup@1.1.4:
-    resolution: {integrity: sha512-vWNHOne0ZUavArqPP5LJta50+S8R261Fr5SvGul37HbEDcowvLjwdvd0ZeSr0r2lTSrPxl6okq9QUw8BFGiAxA==}
-
   node-fetch-native@1.6.7:
     resolution: {integrity: sha512-g9yhqoedzIUm0nTnTqAQvueMPVOuIY16bqgAJJC8XOOubYFNwz6IER9qs0Gq2Xd0+CecCKFjtdDTMA4u4xG06Q==}
 
@@ -3481,11 +3466,6 @@ packages:
 
   node-releases@2.0.37:
     resolution: {integrity: sha512-1h5gKZCF+pO/o3Iqt5Jp7wc9rH3eJJ0+nh/CIoiRwjRxde/hAHyLPXYN4V3CqKAbiZPSeJFSWHmJsbkicta0Eg==}
-
-  node@25.9.0:
-    resolution: {integrity: sha512-tfIfIRJVc32gUI+cQrxwAGWLwTy/EENnB3vF95RuAFosqBGjMTY+o0/3T4oPOipUFrsebQ5WDMsRyAqn65RMFQ==}
-    engines: {npm: '>=5.0.0'}
-    hasBin: true
 
   normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
@@ -4319,9 +4299,6 @@ packages:
 
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
-
-  undici-types@7.18.2:
-    resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
   undici-types@7.24.7:
     resolution: {integrity: sha512-XA+gOBkzYD3C74sZowtCLTpgtaCdqZhqCvR6y9LXvrKTt/IVU6bz49T4D+BPi475scshCCkb0IklJRw6T1ZlgQ==}
@@ -7249,10 +7226,6 @@ snapshots:
     dependencies:
       undici-types: 6.19.8
 
-  '@types/node@25.5.2':
-    dependencies:
-      undici-types: 7.18.2
-
   '@types/prettier@2.7.3': {}
 
   '@types/react-dom@19.2.3(@types/react@19.2.14)':
@@ -10114,8 +10087,6 @@ snapshots:
 
   node-addon-api@3.2.1: {}
 
-  node-bin-setup@1.1.4: {}
-
   node-fetch-native@1.6.7: {}
 
   node-fetch@2.7.0:
@@ -10130,10 +10101,6 @@ snapshots:
   node-mock-http@1.0.4: {}
 
   node-releases@2.0.37: {}
-
-  node@25.9.0:
-    dependencies:
-      node-bin-setup: 1.1.4
 
   normalize-path@3.0.0: {}
 
@@ -11161,8 +11128,6 @@ snapshots:
   undici-types@6.19.8: {}
 
   undici-types@6.21.0: {}
-
-  undici-types@7.18.2: {}
 
   undici-types@7.24.7: {}
 

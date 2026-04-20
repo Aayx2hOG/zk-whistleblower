@@ -12,13 +12,13 @@ import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
-const ARTIFACTS = resolve(ROOT, "..", "circuits-artifacts");
+const ARTIFACTS = resolve(ROOT, "..", "..", "circuits-artifacts");
 const DEST = resolve(ROOT, "public", "circuits");
 
 if (!existsSync(ARTIFACTS)) {
   console.error(
     `ERROR: circuits-artifacts not found at ${ARTIFACTS}\n` +
-      "Run `pnpm run compile:circuit` in the parent directory first."
+    "Run `pnpm run compile:circuit` in the parent directory first."
   );
   process.exit(1);
 }
