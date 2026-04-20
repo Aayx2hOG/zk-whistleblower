@@ -20,11 +20,7 @@ export default function Providers({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     void (async () => {
-      const [rainbowkit, rainbowkitStyles] = await Promise.all([
-        import("@rainbow-me/rainbowkit"),
-        import("@rainbow-me/rainbowkit/styles.css"),
-      ]);
-      void rainbowkitStyles; // side-effect import for CSS
+      const rainbowkit = await import("@rainbow-me/rainbowkit");
 
       const cfg = rainbowkit.getDefaultConfig({
         appName: "ZK Whistleblower",
